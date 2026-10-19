@@ -9,12 +9,14 @@
 #   crates/protocol   -> message formats + validation (no networking)
 #   crates/security   -> device identity, TLS, pairing (SAS), trust store
 #   crates/transfer   -> transfer state machine, file streaming, safety
-#   crates/discovery  -> mDNS device discovery + manual fallback data
-#   crates/core       -> orchestration: ties everything together (public API)
-#   apps/cli          -> the `swiftdrop` command-line application
+#   crates/core       -> orchestration + the web UI server (public API)
+#   apps/cli          -> the `swiftdrop` application (web app + CLI verbs)
 #
 # Dependency rule (spec §7.4): UI depends on core; core depends on the
 # lower-level crates; lower-level crates never know about the UI.
+#
+# NOTE: `crates/discovery` (mDNS) was removed by owner decision — peers
+# are always addressed manually as host:port. See README "Project status".
 # ============================================================================
 
 [workspace]
@@ -23,7 +25,6 @@ members = [
     "crates/protocol",
     "crates/security",
     "crates/transfer",
-    "crates/discovery",
     "crates/core",
     "apps/cli",
 ]
@@ -41,7 +42,6 @@ authors = ["SwiftDrop contributors"]
 swiftdrop-protocol = { path = "crates/protocol" }
 swiftdrop-security = { path = "crates/security" }
 swiftdrop-transfer = { path = "crates/transfer" }
-swiftdrop-discovery = { path = "crates/discovery" }
 swiftdrop-core = { path = "crates/core" }
 
 # --- Async runtime & networking ---
@@ -87,12 +87,6 @@ thiserror = "2"
 # --- Logging (never logs secrets: see spec NFR-SEC-007) ---
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-# --- Device discovery (mDNS/DNS-SD, spec §8.3) ---
-mdns-sd = "0.21"
-
-# --- CLI argument parsing ---
-clap = { version = "4", features = ["derive"] }
 
 # --- Cross-platform folder locations (config dir, home dir) ---
 dirs = "6"

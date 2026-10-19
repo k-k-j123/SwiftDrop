@@ -24,7 +24,6 @@ hostname = { workspace = true }
 swiftdrop-protocol = { workspace = true }
 swiftdrop-security = { workspace = true }
 swiftdrop-transfer = { workspace = true }
-swiftdrop-discovery = { workspace = true }
 
 # TLS streams + server names: `sessions` drives the acceptor/connector
 # and reaches the exporter through the stream types (spec §8.2, §10.5).

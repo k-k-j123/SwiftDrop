@@ -9,10 +9,6 @@
 //! Nothing network-related or file-list-related is exposed to discovery
 //! (see `swiftdrop-discovery` docs).
 
-/// Default TCP port for a `receive` session listener when the user does
-/// not specify one. Use the discovery default for consistency.
-pub const DEFAULT_LISTEN_PORT: u16 = swiftdrop_discovery::DEFAULT_PORT;
-
 /// Default destination directory for received files (runtime-resolved):
 /// platform Downloads if available, else the user's home dir.
 pub fn default_dest_dir() -> std::path::PathBuf {
