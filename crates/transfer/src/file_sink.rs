@@ -146,7 +146,9 @@ impl IncomingFile {
             use std::os::unix::fs::OpenOptionsExt;
             opts.mode(0o644); // received files: owner-writable, group/other-readable
         }
-        let file = opts.open(&temp_path).map_err(|_| ReceiveError::TempCreation)?;
+        let file = opts
+            .open(&temp_path)
+            .map_err(|_| ReceiveError::TempCreation)?;
 
         Ok(Self {
             final_path: dest_dir.join(&final_name),
@@ -172,13 +174,13 @@ impl IncomingFile {
 
     /// Append one chunk (step 2). Refuses to exceed the declared size.
     pub fn write_chunk(&mut self, chunk: &[u8]) -> Result<(), ReceiveError> {
-        let new_total = self
-            .written
-            .checked_add(chunk.len() as u64)
-            .ok_or(ReceiveError::TooManyBytes {
-                declared: self.expected_size,
-                got: u64::MAX,
-            })?;
+        let new_total =
+            self.written
+                .checked_add(chunk.len() as u64)
+                .ok_or(ReceiveError::TooManyBytes {
+                    declared: self.expected_size,
+                    got: u64::MAX,
+                })?;
         if new_total > self.expected_size {
             return Err(ReceiveError::TooManyBytes {
                 declared: self.expected_size,
@@ -201,7 +203,10 @@ impl IncomingFile {
     /// digest check → `sync_all` (durability) → rename (atomicity). A
     /// failure at any point removes the temp file so no half-file
     /// survives (spec §10.4: "on failure, remove temporary files").
-    pub fn finalize(mut self, expected_digest: Option<&str>) -> Result<FinalizedFile, ReceiveError> {
+    pub fn finalize(
+        mut self,
+        expected_digest: Option<&str>,
+    ) -> Result<FinalizedFile, ReceiveError> {
         let result = self.finalize_inner(expected_digest);
         if result.is_err() {
             // Close the handle first so the delete can succeed on Windows.
@@ -211,7 +216,10 @@ impl IncomingFile {
         result
     }
 
-    fn finalize_inner(&mut self, expected_digest: Option<&str>) -> Result<FinalizedFile, ReceiveError> {
+    fn finalize_inner(
+        &mut self,
+        expected_digest: Option<&str>,
+    ) -> Result<FinalizedFile, ReceiveError> {
         // 1. Exact size.
         if self.written != self.expected_size {
             return Err(ReceiveError::ShortStream {
@@ -222,9 +230,7 @@ impl IncomingFile {
 
         // 2. Digest.
         let computed = {
-            let hasher = self
-                .hasher
-                .clone();
+            let hasher = self.hasher.clone();
             hex::encode(hasher.finalize())
         };
         if let Some(expected) = expected_digest {
@@ -238,7 +244,10 @@ impl IncomingFile {
 
         // 3. Durability before rename: the data must be on disk before the
         //    name says "done".
-        let file = self.file.as_mut().expect("file handle present until success");
+        let file = self
+            .file
+            .as_mut()
+            .expect("file handle present until success");
         file.sync_all()?;
         drop(self.file.take());
 
@@ -276,9 +285,11 @@ impl IncomingFile {
             &self.safe_name,
             self.policy,
         )? {
-            crate::paths::ReserveResult::Use(name) => Ok(
-                self.final_path.parent().unwrap_or(Path::new(".")).join(name),
-            ),
+            crate::paths::ReserveResult::Use(name) => Ok(self
+                .final_path
+                .parent()
+                .unwrap_or(Path::new("."))
+                .join(name)),
             crate::paths::ReserveResult::Skip => Err(ReceiveError::CollisionSkip),
         }
     }
@@ -342,7 +353,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut f = incoming(dir.path(), "tampered.bin", 5);
         f.write_chunk(b"evil!").unwrap();
-        let err = f.finalize(Some(&"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"))
+        let err = f
+            .finalize(Some(
+                &"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ))
             .unwrap_err();
         assert!(matches!(err, ReceiveError::DigestMismatch { .. }));
         assert_eq!(err.code(), ErrorCode::IntegrityMismatch);
@@ -357,7 +371,13 @@ mod tests {
         let mut f = incoming(dir.path(), "partial.txt", 100);
         f.write_chunk(b"only ten").unwrap();
         let err = f.finalize(None).unwrap_err();
-        assert!(matches!(err, ReceiveError::ShortStream { expected: 100, got: 8 }));
+        assert!(matches!(
+            err,
+            ReceiveError::ShortStream {
+                expected: 100,
+                got: 8
+            }
+        ));
         // Cleanup happens on abort paths; finalize's size failure keeps the
         // temp for the caller to abort — simulate that here.
         // (Re-create to verify abort works:)
@@ -375,7 +395,10 @@ mod tests {
         let err = f.write_chunk(b"5").unwrap_err();
         assert!(matches!(
             err,
-            ReceiveError::TooManyBytes { declared: 4, got: 5 }
+            ReceiveError::TooManyBytes {
+                declared: 4,
+                got: 5
+            }
         ));
         f.abort();
     }
@@ -403,7 +426,10 @@ mod tests {
         let done = f.finalize(Some(&digest)).unwrap();
 
         assert_eq!(done.saved_name, "notes (1).txt");
-        assert_eq!(std::fs::read(dir.path().join("notes.txt")).unwrap(), b"ORIGINAL");
+        assert_eq!(
+            std::fs::read(dir.path().join("notes.txt")).unwrap(),
+            b"ORIGINAL"
+        );
         assert_eq!(std::fs::read(&done.path).unwrap(), content);
     }
 
@@ -412,9 +438,13 @@ mod tests {
     fn skip_policy_writes_nothing() {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("dup.bin"), b"keep me").unwrap();
-        let err = IncomingFile::create(dir.path(), "dup.bin", 3, CollisionPolicy::Skip).unwrap_err();
+        let err =
+            IncomingFile::create(dir.path(), "dup.bin", 3, CollisionPolicy::Skip).unwrap_err();
         assert!(matches!(err, ReceiveError::CollisionSkip));
-        assert_eq!(std::fs::read(dir.path().join("dup.bin")).unwrap(), b"keep me");
+        assert_eq!(
+            std::fs::read(dir.path().join("dup.bin")).unwrap(),
+            b"keep me"
+        );
     }
 
     /// Overwrite policy replaces only when explicitly chosen.
@@ -424,9 +454,13 @@ mod tests {
         std::fs::write(dir.path().join("swap.bin"), b"old").unwrap();
         let content = b"new!";
         let digest = hex::encode(Sha256::digest(content));
-        let mut f =
-            IncomingFile::create(dir.path(), "swap.bin", content.len() as u64, CollisionPolicy::Overwrite)
-                .unwrap();
+        let mut f = IncomingFile::create(
+            dir.path(),
+            "swap.bin",
+            content.len() as u64,
+            CollisionPolicy::Overwrite,
+        )
+        .unwrap();
         f.write_chunk(content).unwrap();
         let done = f.finalize(Some(&digest)).unwrap();
         assert_eq!(std::fs::read(&done.path).unwrap(), content);

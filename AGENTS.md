@@ -13,11 +13,11 @@ Local-first AirDrop-style file transfer. Rust workspace today; the Flutter UI in
 Strict downward dependencies (spec §7.4, mirrored in root `Cargo.toml`):
 
 ```
-apps/cli  (binary `swiftdrop`)          — currently a 1-line placeholder with zero deps;
-    ↓                                    `cargo run -p swiftdrop` does nothing yet
-crates/core       orchestration facade (thin: most of it is stub/aspirational —
-    ↓             `sessions.rs` is 27 lines; lib.rs describes intent, not code)
-crates/discovery  mDNS `_swiftdrop._tcp.local.` + manual address fallback
+apps/cli  (binary `swiftdrop`)          — real CLI: `send`/`receive`/`serve` verbs, manual arg parse,
+    ↓                                    `--yes` flag, stdin TerminalPrompt; throughput printed after send
+crates/core       orchestration facade — sessions.rs implements the full connection lifecycle
+    ↓             (TLS accept/connect, exporter-bound auth, SAS pairing, offer/accept, streaming,
+crates/discovery  mDNS `_swiftdrop._tcp.local.` + manual address fallback   integrity, completion)
 crates/transfer   state machine, path sanitization, streaming, SHA-256 finalize
 crates/security   TLS, device identity, SAS pairing, trust store
 crates/protocol   wire format only — no networking, no filesystem, no UI
@@ -25,18 +25,18 @@ crates/protocol   wire format only — no networking, no filesystem, no UI
 
 - Never add an edge upward; UI/CLI goes through `swiftdrop-core`'s public API only.
 - Internal deps are declared once in root `[workspace.dependencies]` and pulled in as `dep = { workspace = true }`. Add new shared deps there, not per-crate versions.
+- `core/src/web.rs` is a deliberate exception to protocol purity: a hand-rolled HTTP/1.1 upload server for phone browsers (they can't speak the SwiftDrop wire protocol). **Zero new dependencies**, no auth/TLS on that path by the owner's explicit speed-first choice — read its module docs before "securing" it.
 
 ## Commands
 
 - Full verification: `cargo fmt --check` → `cargo clippy --all-targets` → `cargo test --workspace` (order per spec §16.2; no CI enforces it).
-- Current status of those gates: `cargo fmt --check` **fails** (formatting drift, e.g. `crates/transfer/src/state.rs`); clippy passes with warnings; tests are inline `#[cfg(test)]` modules only — hermetic (tempfile, in-memory), no services, network, or fixtures required.
-- Single crate: `cargo test -p swiftdrop-transfer`. Single test: `cargo test -p swiftdrop-transfer state::tests::<name>`.
+- Current status of those gates (2026-10-19): `cargo fmt --check` passes; clippy passes with warnings only; all tests green (110 total: 21 protocol + 19 security + 13 discovery + 50 transfer + 2 end-to-end localhost + 5 web upload). Tests are hermetic (tempfile, in-memory, `127.0.0.1:0`) — no services, network access, or fixtures required.
+- Single crate: `cargo test -p swiftdrop-transfer`. Single test: `cargo test -p swiftdrop-transfer state::tests::<name>`. End-to-end: `cargo test -p swiftdrop-core --test localhost_transfer` (two in-process peers over real TLS — the §21 first-slice proof). Web path: `cargo test -p swiftdrop-core --test web_upload` (raw HTTP over `127.0.0.1:0` — byte-identical 16 MiB landing, unicode names, short-body abort, name containment).
 - MSRV is 1.88 (workspace `rust-version`, required by rcgen); toolchain here is 1.99.
 
-## Known breakage (as of 2026-10-19 — pre-existing, not caused by your edit)
+## Known breakage
 
-- `cargo test --workspace` fails compiling `swiftdrop-security`: `crates/security/src/tls.rs` references `rustls::server::ServerSide` / `rustls::client::ClientSide`, which do not exist in the locked rustls 0.23.46 (they are `ServerConnectionData` / `ClientConnectionData` there).
-- Until that's fixed, verify with: `cargo test -p swiftdrop-protocol -p swiftdrop-transfer -p swiftdrop-discovery` (passes).
+- None as of 2026-10-19. The previous rustls `ServerSide`/`ClientSide` compile error in `crates/security/src/tls.rs` is fixed (`ServerConnectionData` / `ClientConnectionData`).
 
 ## Non-obvious constraints (don't "fix" these)
 

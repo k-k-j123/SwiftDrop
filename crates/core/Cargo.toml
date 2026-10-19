@@ -26,6 +26,11 @@ swiftdrop-security = { workspace = true }
 swiftdrop-transfer = { workspace = true }
 swiftdrop-discovery = { workspace = true }
 
+# TLS streams + server names: `sessions` drives the acceptor/connector
+# and reaches the exporter through the stream types (spec §8.2, §10.5).
+rustls = { workspace = true }
+tokio-rustls = { workspace = true }
+
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["test-util"] }

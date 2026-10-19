@@ -46,7 +46,7 @@ swiftdrop-core = { path = "crates/core" }
 
 # --- Async runtime & networking ---
 # Tokio is the async runtime (spec §7.2). "signal" gives us Ctrl+C handling.
-tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "signal", "macros", "fs"] }
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "io-std", "time", "sync", "signal", "macros", "fs"] }
 # Async trait objects (we need dynamically-dispatched async callbacks for
 # user prompts: "accept this transfer?", "does this code match?").
 async-trait = "0.1"

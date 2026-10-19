@@ -20,6 +20,11 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// File name of the store inside the config directory (as documented in
+/// the crate docs) — a const so `swiftdrop-core` and the integration
+/// tests agree without a magic string.
+pub const TRUST_FILE: &str = "trusted_devices.json";
+
 /// One confirmed peer identity.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TrustedDevice {
@@ -126,15 +131,13 @@ impl TrustStore {
                 use std::os::unix::fs::OpenOptionsExt;
                 opts.mode(0o600);
             }
-            let mut file = opts.open(&tmp).map_err(|e| {
-                SecurityError::TrustStore(format!("write {}: {e}", tmp.display()))
-            })?;
-            file.write_all(&json).map_err(|e| {
-                SecurityError::TrustStore(format!("write {}: {e}", tmp.display()))
-            })?;
-            file.sync_all().map_err(|e| {
-                SecurityError::TrustStore(format!("sync {}: {e}", tmp.display()))
-            })?;
+            let mut file = opts
+                .open(&tmp)
+                .map_err(|e| SecurityError::TrustStore(format!("write {}: {e}", tmp.display())))?;
+            file.write_all(&json)
+                .map_err(|e| SecurityError::TrustStore(format!("write {}: {e}", tmp.display())))?;
+            file.sync_all()
+                .map_err(|e| SecurityError::TrustStore(format!("sync {}: {e}", tmp.display())))?;
         }
         std::fs::rename(&tmp, &self.path).map_err(|e| {
             SecurityError::TrustStore(format!("rename {}: {e}", self.path.display()))
@@ -183,7 +186,10 @@ mod tests {
         // Revocation persists too (spec FR-PAIR-008).
         let mut reopened = reopened;
         assert!(reopened.remove("id_aaaaaaaaaaaaaaaa").unwrap());
-        assert!(!reopened.remove("id_aaaaaaaaaaaaaaaa").unwrap(), "second remove is a no-op");
+        assert!(
+            !reopened.remove("id_aaaaaaaaaaaaaaaa").unwrap(),
+            "second remove is a no-op"
+        );
         let again = store_in(&dir);
         assert!(!again.contains("id_aaaaaaaaaaaaaaaa"));
         assert!(again.contains("id_bbbbbbbbbbbbbbbb"));
@@ -218,7 +224,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = store_in(&dir);
         store.add("id_aaaaaaaaaaaaaaaa", "X").unwrap();
-        let mode = std::fs::metadata(store.path()).unwrap().permissions().mode();
+        let mode = std::fs::metadata(store.path())
+            .unwrap()
+            .permissions()
+            .mode();
         assert_eq!(mode & 0o777, 0o600);
     }
 }

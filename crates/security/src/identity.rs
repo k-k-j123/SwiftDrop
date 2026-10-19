@@ -143,7 +143,9 @@ impl DeviceIdentity {
 }
 
 fn signing_key_device_id(key: &SigningKey) -> String {
-    hex::encode(Sha256::digest(key.verifying_key().to_encoded_point(true).as_bytes()))
+    hex::encode(Sha256::digest(
+        key.verifying_key().to_encoded_point(true).as_bytes(),
+    ))
 }
 
 /// Generate a P-256 signing key from the OS CSPRNG.
@@ -166,21 +168,26 @@ fn generate_signing_key() -> SigningKey {
 /// The certificate's subject includes the display name so that tools like
 /// `openssl s_client` show something recognizable during development —
 /// SwiftDrop itself never trusts a certificate subject.
-fn generate_self_signed_cert(key_pkcs8: &[u8], display_name: &str) -> Result<Vec<u8>, SecurityError> {
+fn generate_self_signed_cert(
+    key_pkcs8: &[u8],
+    display_name: &str,
+) -> Result<Vec<u8>, SecurityError> {
     // rcgen wants the key as a rustls-pki-types PKCS#8 object plus the
     // matching algorithm identifier (P-256 / SHA-256).
     let pkcs8 = rustls::pki_types::PrivatePkcs8KeyDer::from(key_pkcs8.to_vec());
-    let key_pair = rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&pkcs8, &rcgen::PKCS_ECDSA_P256_SHA256)
-        .map_err(|e| SecurityError::Certificate(format!("load key into rcgen: {e}")))?;
+    let key_pair =
+        rcgen::KeyPair::from_pkcs8_der_and_sign_algo(&pkcs8, &rcgen::PKCS_ECDSA_P256_SHA256)
+            .map_err(|e| SecurityError::Certificate(format!("load key into rcgen: {e}")))?;
 
     // Passing a DNS name to `new` registers it as a Subject Alternative
     // Name (certificate stacks commonly expect at least one SAN).
     let mut params = rcgen::CertificateParams::new(vec!["swiftdrop.local".to_string()])
         .map_err(|e| SecurityError::Certificate(format!("params: {e}")))?;
 
-    params
-        .distinguished_name
-        .push(rcgen::DnType::CommonName, format!("SwiftDrop {display_name}"));
+    params.distinguished_name.push(
+        rcgen::DnType::CommonName,
+        format!("SwiftDrop {display_name}"),
+    );
 
     let cert = params
         .self_signed(&key_pair)

@@ -31,11 +31,7 @@ pub enum PrehashError {
         source: std::io::Error,
     },
     #[error("{path} is larger than the configured maximum file size ({size} > {limit})")]
-    TooLarge {
-        path: String,
-        size: u64,
-        limit: u64,
-    },
+    TooLarge { path: String, size: u64, limit: u64 },
     #[error("the file changed size while being prepared for sending")]
     ChangedUnderneath,
 }
@@ -74,17 +70,16 @@ fn basename(path: &str) -> &str {
 impl OutgoingFile {
     /// Open `path` for sending, refusing anything over `max_bytes`.
     pub async fn open(path: &Path, max_bytes: u64) -> Result<Self, PrehashError> {
-        let meta = tokio::fs::metadata(path).await.map_err(|source| PrehashError::Io {
-            path: path.display().to_string(),
-            source,
-        })?;
+        let meta = tokio::fs::metadata(path)
+            .await
+            .map_err(|source| PrehashError::Io {
+                path: path.display().to_string(),
+                source,
+            })?;
         if !meta.is_file() {
             return Err(PrehashError::Io {
                 path: path.display().to_string(),
-                source: std::io::Error::new(
-                    std::io::ErrorKind::InvalidInput,
-                    "not a regular file",
-                ),
+                source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "not a regular file"),
             });
         }
         let size = meta.len();
@@ -233,7 +228,14 @@ mod tests {
         let path = dir.path().join("big.bin");
         std::fs::write(&path, vec![0u8; 1024]).unwrap();
         let err = OutgoingFile::open(&path, 512).await.unwrap_err();
-        assert!(matches!(err, PrehashError::TooLarge { size: 1024, limit: 512, .. }));
+        assert!(matches!(
+            err,
+            PrehashError::TooLarge {
+                size: 1024,
+                limit: 512,
+                ..
+            }
+        ));
         assert_eq!(err.code(), ErrorCode::FileTooLarge);
     }
 

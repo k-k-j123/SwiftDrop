@@ -68,7 +68,8 @@ impl std::fmt::Debug for Advertiser {
 impl Advertiser {
     /// Start the mDNS daemon and announce the service.
     pub fn start(config: AdvertiseConfig) -> Result<Self, DiscoveryError> {
-        let daemon = ServiceDaemon::new().map_err(|e| DiscoveryError::DaemonStart(e.to_string()))?;
+        let daemon =
+            ServiceDaemon::new().map_err(|e| DiscoveryError::DaemonStart(e.to_string()))?;
         let instance = instance_label();
 
         // Hostname: our machine's hostname, DNS-escaped, suffixed with
@@ -159,7 +160,13 @@ fn local_hostname_label() -> String {
         .trim()
         .to_ascii_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .trim_matches('-')
         .to_string();

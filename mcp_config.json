@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "megamemory": {
+      "command": "megamemory",
+      "args": []
+    }
+  }
+}

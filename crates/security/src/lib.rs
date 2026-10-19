@@ -45,12 +45,12 @@
 pub mod auth;
 pub mod error;
 pub mod identity;
-pub mod trust;
 pub mod tls;
+pub mod trust;
 
 pub use error::SecurityError;
 pub use identity::DeviceIdentity;
-pub use trust::{TrustStore, TrustedDevice};
+pub use trust::{TrustStore, TrustedDevice, TRUST_FILE};
 
 /// Label for the TLS exporter used to sign `hello` messages (ADR-0003).
 pub const AUTH_EXPORTER_LABEL: &str = "swiftdrop-auth-v1";

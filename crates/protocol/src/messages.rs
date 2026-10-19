@@ -296,8 +296,9 @@ mod tests {
                     item_id: "i1".into(),
                     name: "holiday photo ☃.jpg".into(),
                     size_bytes: 1234,
-                    sha256: Some("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        .into()),
+                    sha256: Some(
+                        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855".into(),
+                    ),
                 }],
                 total_size_bytes: 1234,
             }),

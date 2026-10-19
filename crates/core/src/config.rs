@@ -2,8 +2,9 @@
 //!
 //! The values here are sensible defaults for the MVP. CLI flags override
 //! settings, and environment variables override CLI/impl defaults only
-//! where explicitly documented (e.g. `SWIFTDROP_CONFIG_DIR`,
-//! `SWIFTDROP_DEST_DIR`).
+//! where explicitly documented (e.g. `SWIFTDROP_CONFIG_DIR` — the only
+//! such variable implemented today; a `SWIFTDROP_DEST_DIR` alias for
+//! `--dest` is spec'd in intent but not yet read anywhere).
 //!
 //! Nothing network-related or file-list-related is exposed to discovery
 //! (see `swiftdrop-discovery` docs).
@@ -21,6 +22,18 @@ pub fn default_dest_dir() -> std::path::PathBuf {
     } else {
         dirs::home_dir().unwrap_or_else(|| std::path::PathBuf::from("."))
     }
+}
+
+/// The SwiftDrop configuration directory. Honors `SWIFTDROP_CONFIG_DIR`,
+/// else the platform config dir. This is where the settings JSON, the
+/// device identity key, and the trust store all live (spec §8.10, §10.2).
+pub fn config_dir() -> std::path::PathBuf {
+    if let Ok(dir) = std::env::var("SWIFTDROP_CONFIG_DIR") {
+        return std::path::PathBuf::from(dir);
+    }
+    dirs::config_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join("swiftdrop")
 }
 
 /// Default collision policy (spec FR-XFER-011): never overwrite silently.

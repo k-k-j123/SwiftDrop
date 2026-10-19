@@ -202,7 +202,10 @@ mod tests {
     fn no_eta_without_speed() {
         let mut m = ProgressMeter::new(1_000_000);
         m.record(100);
-        assert!(m.eta_seconds().is_none(), "single sample must not yield ETA");
+        assert!(
+            m.eta_seconds().is_none(),
+            "single sample must not yield ETA"
+        );
         // Complete transfers also have no ETA.
         let mut m = ProgressMeter::new(100);
         m.record(100);
@@ -217,7 +220,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(850));
         m.record(5000);
         assert!(m.speed_bps() > 0.0, "speed should exist after 850ms span");
-        assert!(m.eta_seconds().is_some(), "ETA should appear with a real rate");
+        assert!(
+            m.eta_seconds().is_some(),
+            "ETA should appear with a real rate"
+        );
     }
 
     #[test]

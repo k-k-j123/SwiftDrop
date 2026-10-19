@@ -121,7 +121,11 @@ pub fn derive_sas(
     id_b: &str,
 ) -> Result<String, SecurityError> {
     // Canonical order so both ends compute the same context.
-    let (first, second) = if id_a <= id_b { (id_a, id_b) } else { (id_b, id_a) };
+    let (first, second) = if id_a <= id_b {
+        (id_a, id_b)
+    } else {
+        (id_b, id_a)
+    };
     let mut context = first.as_bytes().to_vec();
     context.push(b'\n');
     context.extend_from_slice(second.as_bytes());
@@ -152,7 +156,10 @@ mod tests {
 
     #[test]
     fn device_id_rejects_garbage_key() {
-        assert!(device_id_from_key(&[0u8; 33]).is_err(), "zero point is invalid");
+        assert!(
+            device_id_from_key(&[0u8; 33]).is_err(),
+            "zero point is invalid"
+        );
         assert!(device_id_from_key(b"short").is_err());
     }
 
@@ -160,7 +167,10 @@ mod tests {
     fn device_id_is_deterministic() {
         let dir = tempfile::tempdir().unwrap();
         let id = DeviceIdentity::load_or_create(dir.path(), "T").unwrap();
-        assert_eq!(device_id_from_key(&id.public_sec1()).unwrap(), id.device_id());
+        assert_eq!(
+            device_id_from_key(&id.public_sec1()).unwrap(),
+            id.device_id()
+        );
     }
 
     /// Signature bytes are range-checked on parse: all-zero and

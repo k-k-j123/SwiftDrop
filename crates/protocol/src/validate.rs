@@ -125,14 +125,16 @@ pub fn check_sha256_hex(digest: &str) -> Result<(), ProtocolError> {
 /// because they depend on the local machine, not on the message itself.
 pub fn check_offer(offer: &TransferOffer, limits: &OfferLimits) -> Result<(), ProtocolError> {
     check_opaque_id("transfer_id", &offer.transfer_id).map_err(|e| match e {
-        ProtocolError::InvalidField { reason, .. } => ProtocolError::InvalidOffer(format!(
-            "transfer_id invalid: {reason}"
-        )),
+        ProtocolError::InvalidField { reason, .. } => {
+            ProtocolError::InvalidOffer(format!("transfer_id invalid: {reason}"))
+        }
         other => other,
     })?;
 
     if offer.items.is_empty() {
-        return Err(ProtocolError::InvalidOffer("offer contains no items".into()));
+        return Err(ProtocolError::InvalidOffer(
+            "offer contains no items".into(),
+        ));
     }
     if offer.items.len() > limits.max_items {
         return Err(ProtocolError::InvalidOffer(format!(
@@ -167,8 +169,9 @@ pub fn check_offer(offer: &TransferOffer, limits: &OfferLimits) -> Result<(), Pr
         })?;
 
         if let Some(d) = &item.sha256 {
-            check_sha256_hex(d)
-                .map_err(|e| ProtocolError::InvalidOffer(format!("item '{d0}' digest: {e}", d0 = item.name)))?;
+            check_sha256_hex(d).map_err(|e| {
+                ProtocolError::InvalidOffer(format!("item '{d0}' digest: {e}", d0 = item.name))
+            })?;
         }
     }
 
@@ -276,7 +279,14 @@ mod tests {
 
     #[test]
     fn rejects_bad_ids() {
-        for bad in ["", "short", "has spaces here", "has.dot", "x\"quote", "a/b/c"] {
+        for bad in [
+            "",
+            "short",
+            "has spaces here",
+            "has.dot",
+            "x\"quote",
+            "a/b/c",
+        ] {
             assert!(
                 check_opaque_id("transfer_id", bad).is_err(),
                 "should reject {bad:?}"
@@ -295,9 +305,15 @@ mod tests {
 
     #[test]
     fn rejects_bad_digest() {
-        assert!(check_sha256_hex("nothex-nothex-nothex-nothex-nothex-nothex-nothex-nothex-noth").is_err());
+        assert!(
+            check_sha256_hex("nothex-nothex-nothex-nothex-nothex-nothex-nothex-nothex-noth")
+                .is_err()
+        );
         assert!(check_sha256_hex(&"A".repeat(64)).is_ok()); // uppercase allowed
         assert!(check_sha256_hex(&"g".repeat(64)).is_err()); // 'g' not hex
-        assert!(check_sha256_hex("e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85").is_err()); // 63 chars
+        assert!(check_sha256_hex(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b85"
+        )
+        .is_err()); // 63 chars
     }
 }

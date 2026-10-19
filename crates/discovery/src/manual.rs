@@ -30,7 +30,9 @@ pub enum ManualError {
     Empty,
     #[error("invalid port {0:?} (expected 1-65535)")]
     BadPort(String),
-    #[error("could not understand address {0:?} — expected e.g. 192.168.1.5:4000 or [fd00::1]:4000")]
+    #[error(
+        "could not understand address {0:?} — expected e.g. 192.168.1.5:4000 or [fd00::1]:4000"
+    )]
     Unparseable(String),
     #[error("could not resolve host {0:?} — check the spelling or use the IP address")]
     ResolveFailed(String),
@@ -52,9 +54,9 @@ pub fn parse_manual_target(input: &str, default_port: u16) -> Result<PeerInfo, M
     // the CLI help text.
     let (host, port): (&str, u16) = if let Some(rest) = raw.strip_prefix('[') {
         // [v6]:port  or  [v6]
-        let (addr, after) = rest.split_once(']').ok_or_else(|| {
-            ManualError::Unparseable(raw.to_string())
-        })?;
+        let (addr, after) = rest
+            .split_once(']')
+            .ok_or_else(|| ManualError::Unparseable(raw.to_string()))?;
         let port = match after.strip_prefix(':') {
             Some(p) => Some(parse_port(p)?),
             None => None,

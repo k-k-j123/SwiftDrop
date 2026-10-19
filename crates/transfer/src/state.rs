@@ -244,7 +244,10 @@ mod tests {
                 }
                 _ => t.transition(TransferState::Failed).unwrap(),
             }
-            assert!(t.transition(TransferState::Completed).is_err(), "{bad:?} -> Completed must be refused");
+            assert!(
+                t.transition(TransferState::Completed).is_err(),
+                "{bad:?} -> Completed must be refused"
+            );
             assert!(t.state().is_terminal());
         }
     }
@@ -293,7 +296,10 @@ mod tests {
             ) {
                 t.transition(TransferState::Accepted).unwrap();
             }
-            if matches!(start, TransferState::Transferring | TransferState::Verifying) {
+            if matches!(
+                start,
+                TransferState::Transferring | TransferState::Verifying
+            ) {
                 t.transition(TransferState::Transferring).unwrap();
             }
             if start == TransferState::Verifying {
@@ -320,7 +326,10 @@ mod tests {
             TransferState::Cancelling,
             TransferState::Transferring,
         ] {
-            assert!(t.transition(to).is_err(), "Failed -> {to:?} must be refused");
+            assert!(
+                t.transition(to).is_err(),
+                "Failed -> {to:?} must be refused"
+            );
         }
     }
 

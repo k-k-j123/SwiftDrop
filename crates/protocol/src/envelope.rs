@@ -61,9 +61,8 @@ impl Envelope {
     /// 3. `request_id` syntax (length + charset) → `INVALID_METADATA`.
     /// 4. Known message type + payload schema (in [`Self::into_message`]).
     pub fn parse(json: &str) -> Result<Self, ProtocolError> {
-        let env: Envelope = serde_json::from_str(json).map_err(|e| {
-            ProtocolError::MalformedEnvelope(format!("json decode failed: {e}"))
-        })?;
+        let env: Envelope = serde_json::from_str(json)
+            .map_err(|e| ProtocolError::MalformedEnvelope(format!("json decode failed: {e}")))?;
 
         if env.protocol != PROTOCOL_ID {
             return Err(ProtocolError::UnsupportedVersion {

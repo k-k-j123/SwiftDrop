@@ -55,8 +55,8 @@ impl Discovery {
     /// event stream; `our_major` is only used by callers for
     /// compatibility verdicts (kept here so the type documents intent).
     pub fn start() -> Result<Self, crate::advertise::DiscoveryError> {
-        let daemon =
-            ServiceDaemon::new().map_err(|e| crate::advertise::DiscoveryError::DaemonStart(e.to_string()))?;
+        let daemon = ServiceDaemon::new()
+            .map_err(|e| crate::advertise::DiscoveryError::DaemonStart(e.to_string()))?;
         let mdns_rx = daemon.browse(crate::SERVICE_TYPE)?;
         let (tx, rx) = tokio::sync::mpsc::channel(64);
         tokio::spawn(map_events(mdns_rx, tx));
@@ -85,10 +85,7 @@ impl Discovery {
 /// State: `seen` maps mDNS full names to the peer info we last emitted,
 /// so (a) repeats become `Updated` instead of duplicate `Found`s, and
 /// (b) `Lost` can include the device id for nicer CLI output later.
-async fn map_events(
-    rx: MdnsReceiver<ServiceEvent>,
-    tx: tokio::sync::mpsc::Sender<DiscoveryEvent>,
-) {
+async fn map_events(rx: MdnsReceiver<ServiceEvent>, tx: tokio::sync::mpsc::Sender<DiscoveryEvent>) {
     let mut seen: HashMap<String, PeerInfo> = HashMap::new();
     loop {
         let event = match rx.recv_async().await {
@@ -118,10 +115,7 @@ async fn map_events(
             }
             ServiceEvent::ServiceRemoved(_, fullname) => {
                 if seen.remove(&fullname).is_some()
-                    && tx
-                        .send(DiscoveryEvent::Lost { fullname })
-                        .await
-                        .is_err()
+                    && tx.send(DiscoveryEvent::Lost { fullname }).await.is_err()
                 {
                     return;
                 }

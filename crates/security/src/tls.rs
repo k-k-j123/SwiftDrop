@@ -20,13 +20,15 @@ use crate::error::SecurityError;
 use crate::identity::DeviceIdentity;
 use rustls::client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier};
 use rustls::pki_types::{CertificateDer, ServerName, UnixTime};
-use rustls::{ClientConfig, DigitallySignedStruct, Error as TlsError, ServerConfig, SignatureScheme};
+use rustls::{
+    ClientConfig, DigitallySignedStruct, Error as TlsError, ServerConfig, SignatureScheme,
+};
 
 /// Anything that can produce RFC 5705 exported keying material for a
 /// finished TLS handshake.
 ///
-/// `tokio-rustls` streams expose only `ConnectionCommon<ServerSide>` /
-/// `ConnectionCommon<ClientSide>` (not the top-level `rustls::Connection`
+/// `tokio-rustls` streams expose only `ConnectionCommon<ServerConnectionData>` /
+/// `ConnectionCommon<ClientConnectionData>` (not the top-level `rustls::Connection`
 /// enum), so auth helpers take this trait object instead of a concrete
 /// type. Both connection types export identical bytes for the same
 /// session, which is exactly what the pairing/auth design requires.
@@ -51,7 +53,7 @@ impl ExporterSource for rustls::Connection {
     }
 }
 
-impl ExporterSource for rustls::ConnectionCommon<rustls::server::ServerSide> {
+impl ExporterSource for rustls::ConnectionCommon<rustls::server::ServerConnectionData> {
     fn export(
         &self,
         output: Vec<u8>,
@@ -62,7 +64,7 @@ impl ExporterSource for rustls::ConnectionCommon<rustls::server::ServerSide> {
     }
 }
 
-impl ExporterSource for rustls::ConnectionCommon<rustls::client::ClientSide> {
+impl ExporterSource for rustls::ConnectionCommon<rustls::client::ClientConnectionData> {
     fn export(
         &self,
         output: Vec<u8>,
@@ -71,6 +73,24 @@ impl ExporterSource for rustls::ConnectionCommon<rustls::client::ClientSide> {
     ) -> Result<Vec<u8>, TlsError> {
         self.export_keying_material(output, label, context)
     }
+}
+
+/// The [`ExporterSource`] of a finished `tokio-rustls` **server** stream.
+///
+/// `tokio-rustls` hands back `&ServerConnection`, which derefs to the
+/// `ConnectionCommon<ServerConnectionData>` we implement the trait for;
+/// this helper owns that coercion once so session code asks for "the
+/// exporter of this stream" without naming rustls internals (or holding
+/// two borrows of the stream at once).
+pub fn server_exporter<IO>(stream: &tokio_rustls::server::TlsStream<IO>) -> &dyn ExporterSource {
+    let conn: &rustls::ConnectionCommon<rustls::server::ServerConnectionData> = stream.get_ref().1;
+    conn
+}
+
+/// Client-side twin of [`server_exporter`].
+pub fn client_exporter<IO>(stream: &tokio_rustls::client::TlsStream<IO>) -> &dyn ExporterSource {
+    let conn: &rustls::ConnectionCommon<rustls::client::ClientConnectionData> = stream.get_ref().1;
+    conn
 }
 
 /// Install the `ring` crypto provider for this process, if not already set.

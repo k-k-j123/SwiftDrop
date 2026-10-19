@@ -41,7 +41,7 @@ pub mod manual;
 pub mod peer;
 pub mod txt;
 
-pub use advertise::{Advertiser, AdvertiseConfig};
+pub use advertise::{AdvertiseConfig, Advertiser};
 pub use browse::{Discovery, DiscoveryEvent};
 pub use manual::parse_manual_target;
 pub use peer::{DiscoverySource, PeerInfo, PeerStatus};
@@ -81,7 +81,10 @@ mod tests {
 
     #[test]
     fn display_name_normalization() {
-        assert_eq!(normalize_display_name("  Alice's Laptop  "), Some("Alice's Laptop".into()));
+        assert_eq!(
+            normalize_display_name("  Alice's Laptop  "),
+            Some("Alice's Laptop".into())
+        );
         assert_eq!(normalize_display_name("   "), None);
         assert_eq!(normalize_display_name(""), None);
         // Bounded by characters, not bytes.

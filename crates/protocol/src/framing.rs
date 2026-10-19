@@ -20,8 +20,8 @@
 //! `len` counts the payload only (not the kind byte). Endianness is
 //! big-endian (network byte order) so machines of either endianness agree.
 
-use crate::errors::ProtocolError;
 use crate::envelope::Envelope;
+use crate::errors::ProtocolError;
 use crate::messages::Message;
 use crate::{FRAME_KIND_CONTROL, FRAME_KIND_DATA, MAX_CONTROL_FRAME_BYTES, MAX_DATA_FRAME_BYTES};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -51,7 +51,10 @@ pub async fn read_frame<R: AsyncRead + Unpin>(
         other => return Err(ProtocolError::InvalidFrameKind(other)),
     };
     if len > cap {
-        return Err(ProtocolError::FrameTooLarge { got: len, limit: cap });
+        return Err(ProtocolError::FrameTooLarge {
+            got: len,
+            limit: cap,
+        });
     }
 
     let mut payload = vec![0u8; len];
@@ -92,7 +95,9 @@ pub async fn write_frame<W: AsyncWrite + Unpin>(
         });
     }
 
-    writer.write_all(&(payload.len() as u32).to_be_bytes()).await?;
+    writer
+        .write_all(&(payload.len() as u32).to_be_bytes())
+        .await?;
     writer.write_all(&[kind]).await?;
     writer.write_all(payload).await?;
     writer.flush().await?;
@@ -105,8 +110,8 @@ pub async fn write_message<W: AsyncWrite + Unpin>(
     msg: &Message,
 ) -> Result<(), ProtocolError> {
     let env = Envelope::wrap(msg, crate::new_request_id());
-    let json = serde_json::to_vec(&env)
-        .map_err(|e| ProtocolError::MalformedEnvelope(e.to_string()))?;
+    let json =
+        serde_json::to_vec(&env).map_err(|e| ProtocolError::MalformedEnvelope(e.to_string()))?;
     write_frame(writer, FRAME_KIND_CONTROL, &json).await
 }
 
@@ -159,7 +164,9 @@ mod tests {
     #[tokio::test]
     async fn frame_roundtrip() {
         let mut buf: Vec<u8> = Vec::new();
-        write_frame(&mut buf, FRAME_KIND_DATA, b"hello bytes").await.unwrap();
+        write_frame(&mut buf, FRAME_KIND_DATA, b"hello bytes")
+            .await
+            .unwrap();
         let mut cursor = std::io::Cursor::new(buf);
         let (kind, payload) = read_frame(&mut cursor).await.unwrap();
         assert_eq!(kind, FRAME_KIND_DATA);

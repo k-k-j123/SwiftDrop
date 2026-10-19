@@ -10,7 +10,7 @@
 //! All paths are sanitized via `swiftdrop-transfer::paths` where files
 //! hit disk; here we only persist simple values.
 
-use crate::config::{default_collision_policy, default_dest_dir, DEFAULT_LISTEN_PORT};
+use crate::config::{config_dir, default_collision_policy, default_dest_dir, DEFAULT_LISTEN_PORT};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use swiftdrop_transfer::paths::CollisionPolicy;
@@ -63,7 +63,10 @@ impl Settings {
     /// restrictive permissions (0600) on Unix. Creates parent dirs.
     pub fn save(&self) -> std::io::Result<()> {
         let path = config_path().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::NotFound, "could not determine config dir")
+            std::io::Error::new(
+                std::io::ErrorKind::NotFound,
+                "could not determine config dir",
+            )
         })?;
         let dir = path.parent().unwrap_or_else(|| std::path::Path::new("."));
         std::fs::create_dir_all(dir)?;
@@ -88,11 +91,7 @@ impl Settings {
 
 /// Resolve the JSON settings path. Honors `SWIFTDROP_CONFIG_DIR` override.
 fn config_path() -> Option<PathBuf> {
-    if let Ok(dir) = std::env::var("SWIFTDROP_CONFIG_DIR") {
-        let p = PathBuf::from(dir);
-        return Some(p.join("swiftdrop.json"));
-    }
-    dirs::config_dir().map(|d| d.join("swiftdrop").join("swiftdrop.json"))
+    Some(config_dir().join("swiftdrop.json"))
 }
 
 /// Human-readable default device name (hostname or fallback).

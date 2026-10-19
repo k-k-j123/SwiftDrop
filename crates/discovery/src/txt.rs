@@ -143,7 +143,11 @@ mod tests {
     use super::*;
 
     fn map_lookup<'a>(m: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
-        move |k: &str| m.iter().find(|(key, _)| *key == k).map(|(_, v)| v.to_string())
+        move |k: &str| {
+            m.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| v.to_string())
+        }
     }
 
     #[test]
@@ -162,7 +166,10 @@ mod tests {
         };
         let peer = parse_advert("sd-x._swiftdrop._tcp.local.", vec![], 52915, &lookup);
         assert_eq!(peer.proto_major, 1);
-        assert_eq!(peer.device_id.as_deref(), Some("abababababababababababababababababababababababababababababababab"));
+        assert_eq!(
+            peer.device_id.as_deref(),
+            Some("abababababababababababababababababababababababababababababababab")
+        );
         assert_eq!(peer.display_name, "Kitchen PC");
         assert_eq!(peer.source, DiscoverySource::Mdns);
     }

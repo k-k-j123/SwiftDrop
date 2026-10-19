@@ -152,7 +152,11 @@ pub fn sanitize_file_name(raw: &str) -> Result<String, PathSafetyError> {
 
     // 6. Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9),
     //    with or without an extension.
-    let stem = cleaned.split('.').next().unwrap_or(cleaned).to_ascii_uppercase();
+    let stem = cleaned
+        .split('.')
+        .next()
+        .unwrap_or(cleaned)
+        .to_ascii_uppercase();
     let reserved = matches!(stem.as_str(), "CON" | "PRN" | "AUX" | "NUL")
         || (stem.len() == 4
             && (stem.starts_with("COM") || stem.starts_with("LPT"))
@@ -173,7 +177,11 @@ pub fn sanitize_file_name(raw: &str) -> Result<String, PathSafetyError> {
         out.truncate(end);
         // Truncation may re-introduce trailing dots/spaces.
         let out_trimmed = out.trim_end_matches(['.', ' ']).to_string();
-        out = if out_trimmed.is_empty() { "_".into() } else { out_trimmed };
+        out = if out_trimmed.is_empty() {
+            "_".into()
+        } else {
+            out_trimmed
+        };
     }
 
     if out.is_empty() {
@@ -266,7 +274,11 @@ pub fn temp_file_path(dest_dir: &Path) -> PathBuf {
     use rand::RngCore;
     let mut bytes = [0u8; 16];
     rand::rng().fill_bytes(&mut bytes);
-    dest_dir.join(format!(".swiftdrop-{}-{}.part", std::process::id(), hex::encode(bytes)))
+    dest_dir.join(format!(
+        ".swiftdrop-{}-{}.part",
+        std::process::id(),
+        hex::encode(bytes)
+    ))
 }
 
 #[cfg(test)]
@@ -290,19 +302,14 @@ mod tests {
     #[test]
     fn never_yields_traversal() {
         for hostile in [
-            "..",
-            "../..",
-            "../../",
-            "..\\..\\",
-            ".",
-            "...",
-            "....",
-            ".. ",
-            " .. ",
+            "..", "../..", "../../", "..\\..\\", ".", "...", "....", ".. ", " .. ",
         ] {
             if let Ok(name) = sanitize_file_name(hostile) {
                 assert_ne!(name, "..");
-                assert!(!name.contains(".."), "still traversal-ish: {hostile:?} -> {name:?}");
+                assert!(
+                    !name.contains(".."),
+                    "still traversal-ish: {hostile:?} -> {name:?}"
+                );
             }
         }
     }
@@ -427,7 +434,10 @@ mod tests {
 
     #[test]
     fn relative_path_validation() {
-        assert_eq!(sanitize_relative_path("folder/sub/file.txt").unwrap(), "folder/sub/file.txt");
+        assert_eq!(
+            sanitize_relative_path("folder/sub/file.txt").unwrap(),
+            "folder/sub/file.txt"
+        );
         assert!(sanitize_relative_path("/abs/path").is_err());
         assert!(sanitize_relative_path("../up").is_err());
         assert!(sanitize_relative_path("a/../../b").is_err());
