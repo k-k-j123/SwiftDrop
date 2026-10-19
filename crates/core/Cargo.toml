@@ -1,0 +1,31 @@
+[package]
+name = "swiftdrop-core"
+description = "Orchestration, settings, and session lifecycle for SwiftDrop (spec §6.2, §8–§10)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+tracing = { workspace = true }
+dirs = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+base64 = "0.22"
+fs2 = { workspace = true }
+hostname = { workspace = true }
+
+swiftdrop-protocol = { workspace = true }
+swiftdrop-security = { workspace = true }
+swiftdrop-transfer = { workspace = true }
+swiftdrop-discovery = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio = { workspace = true, features = ["test-util"] }

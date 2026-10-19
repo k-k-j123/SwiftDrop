@@ -1,0 +1,104 @@
+# ============================================================================
+# SwiftDrop — Cargo workspace (Rust)
+# ============================================================================
+# A "workspace" is simply a group of related Rust sub-projects ("crates")
+# that are built together. This matches the repository layout proposed in
+# spec.md §7.3.
+#
+# Layout:
+#   crates/protocol   -> message formats + validation (no networking)
+#   crates/security   -> device identity, TLS, pairing (SAS), trust store
+#   crates/transfer   -> transfer state machine, file streaming, safety
+#   crates/discovery  -> mDNS device discovery + manual fallback data
+#   crates/core       -> orchestration: ties everything together (public API)
+#   apps/cli          -> the `swiftdrop` command-line application
+#
+# Dependency rule (spec §7.4): UI depends on core; core depends on the
+# lower-level crates; lower-level crates never know about the UI.
+# ============================================================================
+
+[workspace]
+resolver = "2"
+members = [
+    "crates/protocol",
+    "crates/security",
+    "crates/transfer",
+    "crates/discovery",
+    "crates/core",
+    "apps/cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+# Minimum supported Rust version. rcgen (certificate library) requires 1.88.
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+authors = ["SwiftDrop contributors"]
+
+[workspace.dependencies]
+# --- Internal crates (path dependencies = our own code) ---
+swiftdrop-protocol = { path = "crates/protocol" }
+swiftdrop-security = { path = "crates/security" }
+swiftdrop-transfer = { path = "crates/transfer" }
+swiftdrop-discovery = { path = "crates/discovery" }
+swiftdrop-core = { path = "crates/core" }
+
+# --- Async runtime & networking ---
+# Tokio is the async runtime (spec §7.2). "signal" gives us Ctrl+C handling.
+tokio = { version = "1", features = ["rt-multi-thread", "net", "io-util", "time", "sync", "signal", "macros", "fs"] }
+# Async trait objects (we need dynamically-dispatched async callbacks for
+# user prompts: "accept this transfer?", "does this code match?").
+async-trait = "0.1"
+
+# --- TLS (spec NFR-SEC-001: TLS 1.3 preferred minimum) ---
+# We use `ring` as the crypto backend instead of the default `aws-lc-rs`
+# because ring compiles everywhere without needing cmake/CMake tooling.
+# `default-features = false` disables TLS 1.2 so we are TLS 1.3-only.
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "logging"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging"] }
+# TLS 1.3 "exported keying material" (RFC 5705/8446) — used to bind our
+# application-layer authentication and pairing code to the TLS session.
+
+# --- Certificate + key generation (self-signed, one per installation) ---
+# NOTE: our certificates are only used to *enable* TLS. Peer identity and
+# authentication happen in our own protocol layer (see ADR-0002/0003).
+rcgen = "0.14"
+# P-256 (ECDSA) keys + signatures for device identity and auth signatures.
+p256 = { version = "0.13", features = ["ecdsa"] }
+# The `signature` traits (Signer/Verifier) used by p256.
+signature = "2"
+
+# --- Serialization ---
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+base64 = "0.22"
+
+# --- Cryptography (integrity + identity hashing; spec §7.2 SHA-256) ---
+sha2 = "0.10"
+hex = "0.4"
+
+# --- Random number generation (IDs, temp names; must be CSPRNG) ---
+rand = "0.9"
+
+# --- Error handling ---
+thiserror = "2"
+
+# --- Logging (never logs secrets: see spec NFR-SEC-007) ---
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# --- Device discovery (mDNS/DNS-SD, spec §8.3) ---
+mdns-sd = "0.21"
+
+# --- CLI argument parsing ---
+clap = { version = "4", features = ["derive"] }
+
+# --- Cross-platform folder locations (config dir, home dir) ---
+dirs = "6"
+# Hostname as the default device display name.
+hostname = "0.4"
+# Cross-platform free-disk-space checks (spec FR-XFER-020).
+fs2 = "0.4"
+# Cooperative cancellation tokens shared across tasks (spec §9.2).
+tokio-util = { version = "0.7", features = ["rt"] }

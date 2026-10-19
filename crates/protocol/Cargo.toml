@@ -1,0 +1,16 @@
+# SwiftDrop protocol crate — see crates/protocol/src/lib.rs for docs.
+[package]
+name = "swiftdrop-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+rand = { workspace = true }
+hex = { workspace = true }
+# Async byte-stream traits (AsyncRead/AsyncWrite) for frame I/O.
+tokio = { workspace = true }

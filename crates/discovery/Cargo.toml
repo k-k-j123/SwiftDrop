@@ -1,0 +1,29 @@
+[package]
+name = "swiftdrop-discovery"
+description = "mDNS/DNS-SD peer discovery plus manual address fallback (spec §5.1, §8.3)"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+# mDNS/DNS-SD implementation. Runtime-agnostic (uses its own threads), so it
+# composes fine with our tokio runtime.
+mdns-sd = { workspace = true }
+# Our protocol constants (PROTOCOL_MAJOR) so discovery advertises a version
+# that is guaranteed to match the wire format.
+swiftdrop-protocol = { workspace = true }
+
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tokio = { workspace = true }
+# Machine hostname → the ".local." host label in our DNS-SD records.
+hostname = { workspace = true }
+# Random suffix for the service instance name (avoids clashing with another
+# SwiftDrop on the same host that chose the same display name).
+rand = { workspace = true }
+hex = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

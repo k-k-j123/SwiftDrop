@@ -1,0 +1,25 @@
+# SwiftDrop transfer crate — see crates/transfer/src/lib.rs for docs.
+[package]
+name = "swiftdrop-transfer"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+swiftdrop-protocol = { workspace = true }
+tokio = { workspace = true }
+# Cancellation propagation (spec §9.2: cancel must reach reads, writes,
+# hashing, and temp-file cleanup).
+tokio-util = { workspace = true }
+sha2 = { workspace = true }
+hex = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+rand = { workspace = true }
+# Free-disk-space checks (spec FR-XFER-020).
+fs2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
