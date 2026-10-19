@@ -117,6 +117,13 @@ impl DeviceIdentity {
         }
 
         // ---- First run: generate a brand-new identity ----
+        // Ensure the config directory exists before writing secrets.
+        // On first launch on a fresh machine, ~/.config/swiftdrop may not exist.
+        std::fs::create_dir_all(dir).map_err(|source| SecurityError::IdentityIo {
+            path: dir.to_path_buf(),
+            source,
+        })?;
+
         let signing_key = generate_signing_key();
         use p256::pkcs8::EncodePrivateKey;
         let key_pkcs8 = signing_key

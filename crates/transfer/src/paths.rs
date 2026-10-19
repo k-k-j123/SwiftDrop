@@ -45,12 +45,6 @@ pub enum CollisionPolicy {
     Overwrite,
 }
 
-impl Default for CollisionPolicy {
-    fn default() -> Self {
-        Self::Rename
-    }
-}
-
 impl std::str::FromStr for CollisionPolicy {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -84,8 +78,7 @@ pub fn sanitize_file_name(raw: &str) -> Result<String, PathSafetyError> {
     // 1. Keep only the last path component (handles / and \ alike).
     let last = raw
         .split(['/', '\\'])
-        .filter(|s| !s.is_empty())
-        .next_back()
+        .rfind(|s| !s.is_empty())
         .unwrap_or("");
 
     // 2. Colon handling. Two distinct hostile/odd cases:

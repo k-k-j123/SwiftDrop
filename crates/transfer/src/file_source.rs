@@ -175,7 +175,7 @@ pub async fn sha256_file(path: std::path::PathBuf) -> Result<String, PrehashErro
     .await
     .map_err(|join| PrehashError::Io {
         path: "hash task".to_string(),
-        source: std::io::Error::new(std::io::ErrorKind::Other, join.to_string()),
+        source: std::io::Error::other(join.to_string()),
     })?
 }
 
