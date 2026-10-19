@@ -1,26 +1,23 @@
-//! SwiftDrop command-line interface — the first UI over `swiftdrop-core`
-//! (spec §21, §7.3). Three verbs:
+//! SwiftDrop application — the web UI plus scriptable CLI verbs.
 //!
 //! ```text
+//! swiftdrop serve   [--listen 0.0.0.0:8080] [--dest DIR] [--open]
 //! swiftdrop receive [--listen 0.0.0.0:52915] [--dest DIR] [--yes]
 //! swiftdrop send    [--yes] <host[:port]> <file>...
-//! swiftdrop serve   [--listen 0.0.0.0:8080]  [--dest DIR]
 //! ```
 //!
-//! This is a *development* UI, not the product UI: it reads prompts from
-//! stdin and prints results to stdout. The real UI is the Flutter app
-//! (spec §7.3, milestone M3); this binary exists so the transfer path is
-//! exercisable end-to-end before any UI exists.
+//! `serve` **is the app**: it runs the web UI from `swiftdrop_core::web`,
+//! whose single page drives computer-to-computer send and receive and the
+//! no-install phone upload path. `--open` also launches the local browser,
+//! which is what the desktop launcher uses.
+//!
+//! `send` and `receive` are the scriptable equivalents of that page's
+//! buttons: the same `swiftdrop_core` session code, driven from a terminal
+//! with stdin prompts instead of the browser.
 //!
 //! `--yes` disables every approval prompt. It exists for scripts, tests,
 //! and benchmarking — never for normal use (spec §20 forbids shipping
 //! auto-accept as the default; here it is an explicit opt-in flag).
-//!
-//! `serve` is the no-install phone path: it runs the plain-HTTP upload
-//! server (`swiftdrop_core::web`) so a browser on the same WiFi can push
-//! files to this machine without the phone speaking the SwiftDrop wire
-//! protocol. Unauthenticated by design choice of the owner — see
-//! `web.rs` for exactly what that trades away.
 
 use std::io::Write as _;
 use std::path::PathBuf;
@@ -28,9 +25,6 @@ use swiftdrop_core::{
     receive, send, AutoAccept, OfferLimits, Peer, ReceiveOptions, SendOptions, SessionPrompt,
 };
 use swiftdrop_protocol::messages::TransferOffer;
-
-/// Default listen port, matching what mDNS will advertise (spec §8.2).
-const DEFAULT_PORT: u16 = 52915;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Keep logs (which never contain secrets or file contents — spec
@@ -52,9 +46,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Some("send") => cmd_send(&args[1..]).await,
             Some("serve") => cmd_serve(&args[1..]).await,
             _ => {
-                eprintln!("usage: swiftdrop receive [--listen ADDR] [--dest DIR] [--yes]");
+                eprintln!("usage: swiftdrop serve [--listen ADDR] [--dest DIR] [--open]");
+                eprintln!("       swiftdrop receive [--listen ADDR] [--dest DIR] [--yes]");
                 eprintln!("       swiftdrop send [--yes] <host[:port]> <file>...");
-                eprintln!("       swiftdrop serve [--listen ADDR] [--dest DIR]");
                 std::process::exit(2);
             }
         }
@@ -131,7 +125,7 @@ async fn cmd_send(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     // `host[:port]` → resolved socket address + the SNI name to present.
     let (host, port) = match target.rsplit_once(':') {
         Some((h, p)) => (h.to_string(), p.parse::<u16>()?),
-        None => (target.clone(), DEFAULT_PORT),
+        None => (target.clone(), swiftdrop_core::config::DEFAULT_LISTEN_PORT),
     };
     let addr = tokio::net::lookup_host((host.as_str(), port))
         .await?
@@ -163,16 +157,18 @@ async fn cmd_send(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-/// `swiftdrop serve` — run the plain-HTTP upload server until killed.
+/// `swiftdrop serve` — run the SwiftDrop app (web UI) until killed.
 ///
-/// This is the phone path with no app on the phone: a browser on the same
-/// WiFi opens the printed URL and pushes files straight to disk. It does
-/// NOT speak the SwiftDrop wire protocol (browsers can't) and does NOT
-/// authenticate — the owner's explicit priority was raw speed on very
-/// large files, and `web.rs` documents exactly what that skips.
+/// This is the product interface: open the printed URL (or let `--open`
+/// launch the browser) to send to another computer, receive from one, or
+/// let a phone browser upload without installing anything. The phone path
+/// is deliberately unauthenticated — `web.rs` documents exactly what that
+/// trades away and which endpoints do enforce the protocol's approvals.
 async fn cmd_serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
+    let settings = swiftdrop_core::Settings::load();
     let mut listen = "0.0.0.0:8080".to_string();
-    let mut dest = swiftdrop_core::web::default_dest();
+    let mut dest = settings.dest_dir.clone();
+    let mut open = false;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -184,6 +180,10 @@ async fn cmd_serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
                 dest = PathBuf::from(args.get(i + 1).ok_or("--dest needs a path")?);
                 i += 2;
             }
+            "--open" => {
+                open = true;
+                i += 1;
+            }
             other => return Err(format!("unknown serve flag: {other}").into()),
         }
     }
@@ -191,7 +191,11 @@ async fn cmd_serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let opts = swiftdrop_core::web::WebOptions {
         listen,
         dest_dir: dest,
-        collision_policy: swiftdrop_core::CollisionPolicy::Rename,
+        collision_policy: settings.collision_policy,
+        config_dir: swiftdrop_core::config::config_dir(),
+        device_name: settings.device_name,
+        receive_port: settings.listen_port,
+        open,
     };
     swiftdrop_core::web::serve(opts)
         .await

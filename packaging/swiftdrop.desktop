@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=SwiftDrop
+GenericName=File Transfer
+Comment=Send files to another computer on this network
+Exec=swiftdrop serve --open
+Icon=swiftdrop
+Terminal=true
+Categories=Network;FileTransfer;
+Keywords=swiftdrop;airdrop;transfer;lan;send;receive;share;

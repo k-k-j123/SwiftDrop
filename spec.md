@@ -13,44 +13,50 @@ criteria\
 **Version:** 0.1.0\
 **Status:** Draft --- decisions marked *Proposed* should be validated
 during implementation\
-**Initial platforms:** Linux, Windows, Android\
-**Future platforms:** macOS, iOS\
+**Initial platform:** Linux (Rust binary with a self-hosted browser web
+UI)\
+**Peer devices:** any device on the LAN with a browser can use the
+phone-upload path\
+**Future platforms:** macOS, Windows\
 **Primary use case:** Fast, convenient, secure file transfer between a
 user's nearby devices over the local network, without a cloud account or
 mandatory cloud relay.
 
 ## 1. Executive summary
 
-SwiftDrop is a local-first, cross-platform file transfer application
-intended to combine high transfer throughput with an AirDrop-like user
-experience and broad platform compatibility.
+SwiftDrop is a local-first file transfer application intended to combine
+high transfer throughput with an AirDrop-like user experience and broad
+platform compatibility.
 
-The first release will support Linux, Windows, and Android. Devices on
-the same LAN or Wi-Fi network should discover one another, establish an
-authenticated encrypted session, request user approval when appropriate,
-and transfer files directly between peers. File contents must not pass
-through a cloud server for ordinary local transfers.
+The first release targets Linux. The application is a Rust workspace
+whose binary, `swiftdrop`, is driven through a browser page that the app
+itself serves over a hand-rolled local HTTP server. Two computers on the
+same LAN or Wi-Fi network connect by explicit `host:port` (default port
+52915), establish an authenticated encrypted session, request user
+approval when appropriate, and transfer files directly between peers.
+File contents must not pass through a cloud server for ordinary local
+transfers.
 
-The application will be designed around a shared Rust core, a Flutter
-UI, a versioned protocol, and replaceable network transports. TCP over a
-local IP network is the initial data transport. Direct USB connectivity
-is a future capability and must not be assumed to work merely because a
-USB cable is connected; it will require a supported USB networking mode
-or a platform-specific transport adapter.
+The application is designed around a shared Rust core, a versioned
+protocol, and replaceable network transports. TCP over a local IP
+network is the initial data transport. Direct USB connectivity is a
+future capability and must not be assumed to work merely because a USB
+cable is connected; it will require a supported USB networking mode or a
+platform-specific transport adapter.
 
 ### 1.1 Product vision
 
-A user should be able to open SwiftDrop, see nearby devices, choose one,
-select files, and send them. A receiving device should show a clear
-incoming-transfer prompt unless the sender is trusted and the user's
-settings explicitly permit automatic acceptance for the relevant content
-and context.
+A user should be able to open the SwiftDrop web page, enter a peer's
+`host:port`, choose files, and send them. A receiving device should show
+a clear incoming-transfer prompt unless the sender is trusted and the
+user's settings explicitly permit automatic acceptance for the relevant
+content and context.
 
 The product should be: - **Fast:** stream files with low overhead and
-avoid whole-file buffering. - **Convenient:** automatic discovery,
-device names, drag-and-drop, share-sheet integration, and understandable
-progress. - **Cross-platform:** protocol and transfer engine are
-independent of the UI toolkit. - **Private:** local transfers remain
+avoid whole-file buffering. - **Convenient:** a browser interface,
+device names, drag-and-drop, and understandable progress. -
+**Cross-platform:** protocol and transfer engine are independent of any
+UI toolkit. - **Private:** local transfers remain
 local; no account or cloud service is required. - **Secure:** encrypted
 sessions, authenticated pairing, safe file handling, and explicit
 receiving policies. - **Reliable:** integrity verification,
@@ -70,40 +76,37 @@ are staged features, not MVP blockers.
 
 ### 2.1 MVP goals
 
-1.  Transfer one or more files between two devices on the same IP
+1.  Transfer one or more files between two computers on the same IP
     network.
-2.  Support Linux, Windows, and Android.
-3.  Discover running peers automatically on a typical home or office
-    LAN.
-4.  Offer manual connection and QR-code fallback when discovery fails.
-5.  Encrypt traffic and authenticate paired peers.
-6.  Ask the receiver to approve incoming transfers by default.
-7.  Stream data with bounded memory usage.
-8.  Show useful progress, speed, estimated remaining time, and errors.
-9.  Verify completed file content with a cryptographic hash.
-10. Handle cancellation and partial failures safely.
-11. Keep local file transfers independent of cloud services.
-12. Establish a benchmark suite for LAN and Wi-Fi performance.
+2.  Target Linux first, keeping the Rust core portable.
+3.  Connect to a peer by explicit `host:port` (default port 52915).
+4.  Encrypt traffic and authenticate paired peers.
+5.  Ask the receiver to approve incoming transfers by default.
+6.  Stream data with bounded memory usage.
+7.  Show useful progress, speed, estimated remaining time, and errors.
+8.  Verify completed file content with a cryptographic hash.
+9.  Handle cancellation and partial failures safely.
+10. Keep local file transfers independent of cloud services.
+11. Establish a benchmark suite for LAN and Wi-Fi performance.
 
 ### 2.2 Post-MVP goals
 
 -   Resume interrupted transfers across application restarts.
 -   Concurrent transfer queue and multiple-file/folder transfer.
--   Native share-sheet integration on Android and desktop.
--   Drag-and-drop support on desktop.
+-   Drag-and-drop support in the web UI.
 -   Trusted-device policies with granular auto-accept rules.
 -   Clipboard text and URL sharing.
 -   Background transfer behavior appropriate to each OS.
 -   USB networking transport where supported.
--   macOS and iOS clients.
+-   macOS and Windows clients.
 -   Optional remote transfer using a separately designed
     peer-to-peer/relay mode.
 
 ### 2.3 Non-goals for the MVP
 
 -   Cloud upload/download or account-based identity.
--   Internet-wide device discovery.
--   Guaranteed background receiving on iOS.
+-   Automatic device discovery, including mDNS/DNS-SD.
+-   Guaranteed background receiving.
 -   Custom encryption algorithms or custom TCP congestion control.
 -   Network filesystem mounting.
 -   Remote desktop, phone control, notification mirroring, or broad
@@ -141,47 +144,38 @@ are staged features, not MVP blockers.
 
 ### 4.1 Primary users
 
-1.  A Linux laptop user sending files to an Android phone.
-2.  An Android user sending photos or downloads to a Linux laptop.
-3.  A Windows user transferring large files to another PC.
-4.  A user transferring files between devices connected to the same
-    router.
-5.  A user on a network where multicast discovery is blocked and who
-    needs a manual fallback.
+1.  A Linux user sending files to another computer on the same network.
+2.  A phone user uploading files to the Linux host through the web page
+    in the phone's browser.
+3.  A user transferring large files between two computers.
+4.  A user on a network where peer addresses must be entered manually.
 
 ### 4.2 Core user journeys
 
-#### Journey A: Send from desktop to phone
+#### Journey A: Send from one computer to another
 
-1.  User opens SwiftDrop on desktop.
-2.  Nearby devices appear, including the phone.
-3.  User selects the phone and chooses files or drags files onto it.
-4.  Phone shows sender name, file names, total size, and Accept/Reject.
-5.  User accepts.
-6.  Transfer progress appears on both devices.
-7.  Receiver verifies content and saves to the chosen/default
+1.  User starts the receiver (`swiftdrop serve` or `receive`) on the
+    receiving computer and opens the web page in a browser.
+2.  User starts `swiftdrop send` on the sending computer, pointing at
+    the receiver's `host:port`.
+3.  The receiver shows sender identity, file names, total size, and
+    Accept/Reject in the web page.
+4.  User accepts.
+5.  Transfer progress appears on both peers.
+6.  Receiver verifies content and saves to the chosen/default
     destination.
-8.  Both devices show success or a clear actionable error.
+7.  Both peers show success or a clear actionable error.
 
-#### Journey B: Send from phone to desktop
+#### Journey B: Upload from a phone browser
 
-1.  User opens SwiftDrop on Android or invokes it from the Android share
-    sheet.
-2.  User selects the desktop.
-3.  Desktop shows an incoming-transfer prompt.
-4.  User accepts and selects or confirms a destination.
-5.  Files stream to the desktop and are verified.
-6.  The user receives a notification or completion state.
+1.  The receiving computer runs `swiftdrop serve` and shows the URL of
+    its web page.
+2.  The user opens that URL in the phone's browser; no app is installed
+    on the phone.
+3.  The user selects files and uploads them over the LAN.
+4.  Files land on the computer and the browser shows completion.
 
-#### Journey C: Discovery fails
-
-1.  The peer list remains usable and explains that discovery may be
-    blocked.
-2.  User selects "Connect by address" or scans a QR code.
-3.  The app establishes the same secure pairing/session workflow.
-4.  Manual connection does not disable authentication or encryption.
-
-#### Journey D: Transfer is interrupted
+#### Journey C: Transfer is interrupted
 
 MVP behavior: mark the transfer as interrupted or failed, preserve no
 file as "complete," and clean up temporary files according to policy.
@@ -193,44 +187,15 @@ identity can be safely reconciled.
 Priorities: - **P0:** required for MVP. - **P1:** important follow-up. -
 **P2:** later enhancement.
 
-### 5.1 Device discovery
-
--   **FR-DISC-001 (P0):** A running peer must advertise a SwiftDrop
-    service on supported local interfaces.
--   **FR-DISC-002 (P0):** A client must browse for compatible peers and
-    update the device list when peers appear or disappear.
--   **FR-DISC-003 (P0):** A peer must advertise a protocol version range
-    or compatible major version.
--   **FR-DISC-004 (P0):** The UI must distinguish "available,"
-    "connecting," "offline," and "unsupported/incompatible" where known.
--   **FR-DISC-005 (P0):** A user must be able to connect using an
-    address and port when discovery fails.
--   **FR-DISC-006 (P1):** A QR code may encode connection details and a
-    short-lived pairing challenge.
--   **FR-DISC-007 (P0):** Discovery metadata must not include filenames,
-    transfer contents, or other unnecessary sensitive data.
--   **FR-DISC-008 (P0):** Discovery results must be treated as untrusted
-    until the connection is authenticated.
--   **FR-DISC-009 (P1):** The app should handle multiple network
-    interfaces and address changes.
--   **FR-DISC-010 (P1):** The app should explain likely discovery
-    limitations such as guest Wi-Fi, multicast filtering, VPNs,
-    firewalls, and client isolation.
-
-**Proposed discovery service:** `_swiftdrop._tcp.local.` using
-mDNS/DNS-SD. Advertise only a port, protocol compatibility information,
-and a non-sensitive opaque peer identifier if needed. Avoid relying on
-the service advertisement as an authentication mechanism.
-
-### 5.2 Pairing and device trust
+### 5.1 Pairing and device trust
 
 -   **FR-PAIR-001 (P0):** All control and file data traffic must be
     encrypted in transit.
 -   **FR-PAIR-002 (P0):** A new peer must not silently gain
-    trusted-device status merely by appearing in discovery.
+    trusted-device status merely by connecting.
 -   **FR-PAIR-003 (P0):** Initial pairing must use an explicit
     user-confirmed process, such as matching a short authentication
-    string or scanning a QR code that contains a challenge.
+    string.
 -   **FR-PAIR-004 (P0):** A device identity must be stable across normal
     application restarts.
 -   **FR-PAIR-005 (P0):** Users must be able to remove a trusted device.
@@ -242,12 +207,11 @@ the service advertisement as an authentication mechanism.
     from being treated as trusted.
 -   **FR-PAIR-009 (P0):** A pairing flow must defend against accidental
     pairing with a nearby impersonator; the UI must compare a
-    cryptographically derived authentication string or use an equivalent
-    secure out-of-band method.
+    cryptographically derived authentication string.
 -   **FR-PAIR-010 (P0):** Private keys and tokens must not be written to
     ordinary logs.
 
-### 5.3 Transfer workflow
+### 5.2 Transfer workflow
 
 -   **FR-XFER-001 (P0):** Users must be able to select one or more files
     for sending.
@@ -290,10 +254,10 @@ the service advertisement as an authentication mechanism.
 -   **FR-XFER-020 (P0):** The receiver must enforce configurable maximum
     file size, transfer count, and disk-space checks.
 
-### 5.4 User interface
+### 5.3 User interface
 
--   **FR-UI-001 (P0):** The home screen must show nearby devices and
-    their connection/trust state.
+-   **FR-UI-001 (P0):** The web UI must allow connecting to a peer by
+    explicit `host:port`.
 -   **FR-UI-002 (P0):** The user must be able to send a file from a file
     picker.
 -   **FR-UI-003 (P0):** Incoming transfers must have clear Accept and
@@ -302,35 +266,24 @@ the service advertisement as an authentication mechanism.
     transfer is active.
 -   **FR-UI-005 (P0):** Errors must be actionable and avoid exposing
     stack traces or secrets.
--   **FR-UI-006 (P0):** The app must show whether a peer was discovered
-    automatically or connected manually where useful for
-    troubleshooting.
--   **FR-UI-007 (P1):** Desktop clients should support drag-and-drop.
--   **FR-UI-008 (P1):** Android should integrate with the system share
-    sheet.
+-   **FR-UI-006 (P0):** The web UI must show manual connection details.
+-   **FR-UI-007 (P1):** The web UI should support drag-and-drop.
+-   **FR-UI-008 (P1):** Any device with a browser on the LAN can upload
+    to the web page served by the receiver (no app required).
 -   **FR-UI-009 (P1):** The app should include a transfer history with
     user-controlled retention.
--   **FR-UI-010 (P1):** The app should provide a clear setting for
-    whether the device is visible to nearby peers.
 -   **FR-UI-011 (P0):** The app must not imply that the internet is
     required for a local transfer.
 -   **FR-UI-012 (P1):** The UI should show the active transport when
     known, for example Wi-Fi or Ethernet.
 
-### 5.5 Platform integration
+### 5.4 Platform integration
 
--   **FR-PLAT-001 (P0):** Linux and Windows clients must support
-    foreground sending and receiving while the app is running.
--   **FR-PLAT-002 (P0):** Android must support sending and receiving
-    while the app is active.
--   **FR-PLAT-003 (P0):** Android file access must use supported storage
-    APIs and permissions; do not assume unrestricted filesystem access.
--   **FR-PLAT-004 (P1):** Desktop clients should integrate with OS file
-    pickers and notification systems.
--   **FR-PLAT-005 (P1):** Android background transfer behavior must be
-    implemented using supported foreground/background execution
-    mechanisms where required.
--   **FR-PLAT-006 (P2):** macOS and iOS should be added after the
+-   **FR-PLAT-001 (P0):** The Linux client must support foreground
+    sending and receiving while the app is running.
+-   **FR-PLAT-004 (P1):** The client should integrate with OS file
+    pickers and notification systems where available.
+-   **FR-PLAT-006 (P2):** macOS and Windows should be added after the
     protocol and core are stable.
 -   **FR-PLAT-007 (P2):** Direct USB networking should be added behind a
     transport interface.
@@ -381,8 +334,6 @@ Targets are engineering goals, not guarantees across arbitrary hardware.
 -   **NFR-SEC-001:** TLS 1.3 is the preferred minimum for the initial
     secure transport; use a well-maintained TLS implementation.
 -   **NFR-SEC-002:** Do not implement custom cryptographic primitives.
--   **NFR-SEC-003:** Peer discovery is unauthenticated metadata and must
-    not be trusted.
 -   **NFR-SEC-004:** Validate all control messages, lengths, file names,
     identifiers, and state transitions.
 -   **NFR-SEC-005:** Prevent path traversal, symlink/path substitution
@@ -406,8 +357,8 @@ Targets are engineering goals, not guarantees across arbitrary hardware.
 
 -   **NFR-UX-001:** Core sending and receiving must not require terminal
     usage.
--   **NFR-UX-002:** The default flow should not require manually
-    entering an IP address on a typical LAN.
+-   **NFR-UX-002:** The UI must support explicit `host:port` entry for
+    connecting to peers.
 -   **NFR-UX-003:** The app must clearly differentiate waiting for
     approval, transferring, verifying, completed, failed, and cancelled.
 -   **NFR-UX-004:** Essential status must not rely on color alone.
@@ -421,32 +372,38 @@ Targets are engineering goals, not guarantees across arbitrary hardware.
 
 ## 7. System architecture
 
+**Status note:** By owner decision on 2026-10-19 the planned Flutter
+client and the mDNS/DNS-SD discovery layer were removed. The interface
+is now a browser page served by the app, and peers connect by explicit
+`host:port` (default 52915) with no device discovery.
+
 ### 7.1 High-level components
 
-1.  **Flutter client:** UI, OS integrations, application state
-    presentation.
-2.  **Rust core:** transfer orchestration, protocol, file streaming,
-    trust policy, discovery coordination.
-3.  **Discovery module:** mDNS/DNS-SD and manual fallback.
-4.  **Protocol module:** versioned messages and validation.
-5.  **Security module:** device identity, TLS configuration, pairing,
-    trusted-device storage.
-6.  **Transfer module:** file offers, acceptance, streaming, integrity,
-    cancellation, and later resume.
-7.  **Persistence module:** settings, device trust, transfer history,
-    and later resumable-transfer state.
-8.  **Transport module:** TCP/IP initially; USB network or other
-    adapters later.
-9.  **Platform adapter layer:** file picker, notifications, Android
-    storage APIs, drag-and-drop, and share-sheet integration.
+1.  **Web UI:** a single embedded HTML/JS page served by the app and
+    opened in any browser.
+2.  **CLI (`apps/cli`):** the `swiftdrop` binary with `send`, `receive`,
+    and `serve` verbs and a `--yes` flag for non-interactive
+    auto-accept.
+3.  **Core (`crates/core`):** orchestration (`sessions.rs`), the web UI
+    server (`web.rs`), settings (`settings.rs`), and configuration
+    (`config.rs`).
+4.  **Protocol module (`crates/protocol`):** versioned messages and
+    validation.
+5.  **Security module (`crates/security`):** device identity, TLS 1.3
+    configuration, SAS pairing, trusted-device storage.
+6.  **Transfer module (`crates/transfer`):** file offers, acceptance,
+    streaming, integrity, cancellation, and later resume.
+7.  **Transport:** TCP over the local IP network, provided inside core;
+    a USB network or other adapter may be added later behind the same
+    session interface.
 
 ### 7.2 Proposed stack
 
   -----------------------------------------------------------------------
   Area                    Proposed choice         Notes
   ----------------------- ----------------------- -----------------------
-  UI                      Flutter/Dart            Shared UI for Linux,
-                                                  Windows, Android
+  UI                      Browser HTML/JS page    Served by the app; no
+                                                  native client
 
   Core                    Rust                    Shared, testable
                                                   implementation
@@ -454,19 +411,15 @@ Targets are engineering goals, not guarantees across arbitrary hardware.
   Async runtime           Tokio                   Async tasks and network
                                                   I/O
 
-  HTTP/control server     Hyper or Axum           Keep the API small and
-                                                  versioned
+  HTTP/control server     Hand-rolled HTTP/1.1    Zero new dependencies;
+                                                  see core::web
 
   Initial bulk transport  TCP                     Mature, widely
                                                   supported, easy to
                                                   benchmark
 
-  Encryption              TLS 1.3                 Use a maintained
-                                                  library and strict peer
-                                                  verification
-
-  Discovery               mDNS/DNS-SD             Multicast availability
-                                                  varies by network
+  Encryption              TLS 1.3 (rustls, ring)  TLS 1.3-only; ring
+                                                  avoids cmake
 
   Control encoding        JSON                    Simpler diagnostics;
                                                   enforce strict size
@@ -475,73 +428,49 @@ Targets are engineering goals, not guarantees across arbitrary hardware.
   Hash                    SHA-256                 Integrity, not sender
                                                   authentication
 
-  Persistence             SQLite when needed      Transfer history and
-                                                  resumable state
+  Persistence             Settings file           Settings and
+                                                  trusted-device records
 
-  UI/core bridge          flutter_rust_bridge or  Select after a proof of
-                          thin FFI                concept
-
-  CI                      GitHub Actions or       Linux/Windows builds
-                          equivalent              and automated tests
+  CI                      GitHub Actions or       Linux builds and
+                          equivalent              automated tests
   -----------------------------------------------------------------------
 
 The precise crate selection must be reviewed at implementation time for
-maintenance status, supported targets, license, security history, and
-compatibility with the chosen Flutter/Rust bridge.
+maintenance status, supported targets, license, and security history.
 
-### 7.3 Proposed repository structure
+### 7.3 Repository structure
 
 ``` text
 swiftdrop/
 ├── apps/
-│   ├── client/                    # Flutter UI
-│   │   ├── lib/
-│   │   │   ├── screens/
-│   │   │   ├── widgets/
-│   │   │   ├── state/
-│   │   │   ├── services/
-│   │   │   └── main.dart
-│   │   ├── linux/
-│   │   ├── windows/
-│   │   └── android/
-│   └── receiver-cli/              # Development/test CLI
+│   └── cli/                       # Binary `swiftdrop`: send, receive, serve, --yes
 ├── crates/
-│   ├── protocol/                  # Message types and validation
-│   ├── discovery/                 # mDNS and fallback discovery
-│   ├── security/                  # Identity, TLS, pairing
-│   ├── transfer/                  # Streaming and transfer lifecycle
-│   ├── persistence/               # Settings and transfer state
-│   └── core/                      # Public API and orchestration
-├── tests/
-│   ├── integration/
-│   ├── interoperability/
-│   └── performance/
-├── docs/
-│   ├── spec.md
-│   ├── protocol.md
-│   ├── threat-model.md
-│   └── decisions/
-├── Cargo.toml
-├── README.md
-└── LICENSE
+│   ├── core/                      # Orchestration (sessions.rs), web UI (web.rs),
+│   │                              # settings.rs, config.rs
+│   ├── security/                  # Device identity, TLS, SAS pairing, trust store
+│   ├── transfer/                  # State machine, sanitization, streaming, hashing
+│   └── protocol/                  # Message types and validation
+├── Cargo.toml                     # Workspace manifest and shared dependencies
+└── spec.md
 ```
 
-This is a target structure, not a requirement to create every crate
-before the first transfer works. Begin with a small workspace and split
-modules as boundaries become clear.
+This reflects the current workspace. Keep new modules behind the
+dependency direction in §7.4, and split or merge crates only when a
+boundary becomes clear.
 
 ### 7.4 Dependency direction
 
--   UI calls the public API exposed by `core`.
--   `core` depends on protocol, security, discovery, transfer, and
-    persistence abstractions.
--   `transfer` depends on protocol and transport interfaces, not
-    Flutter.
--   `discovery` reports untrusted candidate peers; it does not mark them
-    trusted.
--   `protocol` contains data types and validation, not UI behavior.
--   Platform-specific code is kept behind narrow interfaces.
--   No crate should depend on UI widgets or UI state.
+-   `apps/cli` and the browser web UI call the public API exposed by
+    `core`.
+-   `core` may depend on `protocol`, `security`, and `transfer`.
+-   Lower crates never depend on `core`, on the CLI, or on the UI.
+-   `protocol` contains data types and validation, not networking,
+    filesystem access, or UI behavior.
+-   The web UI server (`core::web`) is a deliberate exception to
+    protocol purity: it speaks HTTP/1.1 to browsers that cannot speak
+    the SwiftDrop wire protocol. Keep it isolated from the authenticated
+    peer-session path.
+-   No crate may depend on UI widgets or UI state.
 
 ## 8. Protocol design: SwiftDrop/1
 
@@ -560,39 +489,21 @@ modules as boundaries become clear.
 ### 8.2 Initial network model
 
 Each peer runs a receiver service while receiving is enabled. It listens
-on a dynamically chosen or configured TCP port, preferably bound only to
-intended interfaces. A service advertisement tells other devices where
-to connect.
+on a configured TCP port (default 52915), preferably bound only to
+intended interfaces. Peers learn where to connect from an explicit
+`host:port` supplied by the user; there is no automatic discovery.
 
 For the MVP: - Use TCP/IP for the control and data path. - Protect the
 connection with TLS. - Use a single accepted stream per file or transfer
-initially. - Keep the listener closed or undiscoverable when the user
-disables receiving. - Do not expose the listener to all interfaces
-unintentionally. - Configure OS firewall guidance and handle denied
-permissions gracefully.
+initially. - Keep the listener closed when the user disables receiving.
+- Do not expose the listener to all interfaces unintentionally. -
+Configure OS firewall guidance and handle denied permissions gracefully.
 
-**Important:** a service advertised on a local network is not inherently
-private. Network segmentation and firewall rules may allow other local
-devices to reach the service. Authentication and approval must still be
-enforced.
+**Important:** a listener on a local network is not inherently private.
+Network segmentation and firewall rules may allow other local devices to
+reach the service. Authentication and approval must still be enforced.
 
-### 8.3 Service advertisement
-
-Proposed service type:
-
-``` text
-_swiftdrop._tcp.local.
-```
-
-Advertisement fields should be minimal and non-sensitive: - Protocol
-major version. - Listening port (normally represented by DNS-SD SRV). -
-Optional opaque peer instance identifier. - Optional short display label
-only if privacy implications are accepted.
-
-Do not publish file lists, user account names, filesystem paths, trusted
-peer lists, or authentication secrets.
-
-### 8.4 Message envelope
+### 8.3 Message envelope
 
 Control messages are UTF-8 JSON objects with a maximum size limit. Each
 message includes a message type and protocol version. The implementation
@@ -614,7 +525,7 @@ The `request_id` is an example correlation identifier. Production
 identifiers must be generated using a cryptographically secure random
 source and validated for length and syntax.
 
-### 8.5 Initial control messages
+### 8.4 Initial control messages
 
   -----------------------------------------------------------------------
   Message                 Direction               Purpose
@@ -660,7 +571,7 @@ Message schemas, error codes, required/optional fields, and maximum
 sizes must be documented in `docs/protocol.md` before the protocol is
 considered stable.
 
-### 8.6 Transfer offer schema
+### 8.5 Transfer offer schema
 
 Illustrative JSON:
 
@@ -695,7 +606,7 @@ checking the sum of item sizes and configured limits. - The receiver
 must show the user the offer before bulk transfer begins unless a
 narrowly scoped auto-accept policy applies.
 
-### 8.7 Binary transfer format
+### 8.6 Binary transfer format
 
 Do not send file bytes as Base64 inside JSON. Use a binary body over an
 authenticated connection.
@@ -715,7 +626,7 @@ Avoid supporting arbitrary chunk offsets in the first release unless
 resume is included. Add a documented chunk protocol later if performance
 tests justify it.
 
-### 8.8 Error codes
+### 8.7 Error codes
 
 Define stable machine-readable codes, for example: -
 `UNSUPPORTED_VERSION` - `AUTHENTICATION_REQUIRED` - `PAIRING_REJECTED` -
@@ -728,7 +639,7 @@ Do not send stack traces, filesystem internals, or secrets to the remote
 peer. User-facing messages can be more descriptive than protocol error
 codes.
 
-### 8.9 Protocol compatibility
+### 8.8 Protocol compatibility
 
 -   Protocol versions use an explicit major/minor scheme or equivalent
     documented compatibility policy.
@@ -803,7 +714,6 @@ written; completion requires verification.
 ### 10.2 Threats
 
 -   Malicious peer on the same Wi-Fi.
--   Spoofed service advertisements.
 -   Man-in-the-middle during pairing.
 -   Unauthorized file push.
 -   Malicious filenames and path traversal.
@@ -856,30 +766,27 @@ written; completion requires verification.
 
 ### 10.5 Pairing design
 
-Proposed pairing flow: 1. Peers establish a TLS connection using
-temporary or persistent identity material. 2. The app derives a short
-authentication string from the session transcript and identity
-information using a reviewed construction. 3. Both UIs show the same
-verification string or QR pairing challenge. 4. The user confirms the
-match on the intended devices. 5. The peers persist the verified
-identity association. 6. Later connections authenticate against the
-stored identity. 7. Users can remove a peer from the trusted list.
+Pairing flow: 1. Peers establish a TLS connection using temporary or
+persistent identity material. 2. The peers derive a short authentication
+string (SAS) from the session transcript and identity information using
+a reviewed construction (the TLS exporter). 3. Both peers show the same
+verification string. 4. The user confirms the match on the intended
+devices. 5. The peers persist the verified identity association. 6.
+Later connections authenticate against the stored identity. 7. Users can
+remove a peer from the trusted list.
 
 The exact cryptographic construction must be selected from a reviewed
 library/protocol design. Do not invent an authentication-string
-algorithm. A QR code should contain only the minimum pairing data,
-should expire where appropriate, and should not become a permanent
-bearer credential.
+algorithm.
 
 ### 10.6 Privacy
 
 -   No mandatory account.
 -   No cloud relay for local transfers.
 -   No analytics by default in the MVP.
--   No filenames in discovery advertisements.
 -   User-controlled transfer history.
 -   Clear explanation of which interfaces are listening.
--   Explicit user control over visibility and receiving behavior.
+-   Explicit user control over receiving behavior.
 -   Avoid retaining file content after completion.
 -   Document any optional diagnostic data before collecting it.
 
@@ -887,9 +794,8 @@ bearer credential.
 
 ### 11.1 Settings
 
-Potential settings: - Device display name. - Device visibility/discovery
-enabled. - Receiving enabled. - Default destination directory or Android
-destination preference. - Ask before receiving: enabled by default. -
+Potential settings: - Device display name. - Receiving enabled. - Default
+destination directory. - Ask before receiving: enabled by default. -
 Trusted devices. - Maximum concurrent transfers. - Maximum accepted file
 size. - Collision behavior. - Notification preference. - Transfer
 history retention. - Diagnostic logging level.
@@ -920,8 +826,8 @@ deletion behavior explicit.
 
 ### 12.1 Transport abstraction
 
-The transfer engine should depend on a narrow interface for a connected
-peer and byte stream, rather than on Flutter or a specific network
+The transfer engine depends on a narrow interface for a connected peer
+and byte stream, rather than on the web UI or a specific network
 interface.
 
 Conceptual responsibilities: - Establish a connection to a verified
@@ -939,15 +845,16 @@ trait/interface with a TCP implementation is sufficient initially.
 -   Support multiple interfaces without assuming Wi-Fi is always
     preferred.
 -   Handle address changes and reconnection.
--   Do not rely on multicast discovery being available on every network.
--   Keep manual IP/port connection as a fallback.
+-   There is no multicast discovery; peers are addressed explicitly by
+    `host:port`.
 -   Avoid internet relay for peers on the same reachable LAN.
 
 ### 12.3 Connection selection
 
-For MVP, choose a reachable discovered address and attempt a secure
-connection. If multiple addresses exist, try candidates with timeouts
-and stop after a successful authenticated connection.
+For MVP, connect to the address supplied by the user and attempt a
+secure connection. If the host resolves to multiple addresses, try
+candidates with timeouts and stop after a successful authenticated
+connection.
 
 Future improvements may: - Rank interfaces using observed throughput and
 latency. - Detect whether a connection is routed through a VPN. - Offer
@@ -988,7 +895,7 @@ combination explicitly.
 7.  Add concurrency for separate files with a bounded queue.
 8.  Only consider parallel chunks for one large file if single-stream
     performance is below the usable baseline.
-9.  Re-run benchmarks on Linux, Windows, and Android.
+9.  Re-run benchmarks on supported platforms.
 10. Record device hardware, network conditions, file size, storage type,
     and build version.
 
@@ -1045,11 +952,7 @@ runs and report median plus range.
 -   Sender and receiver on localhost.
 -   Sender and receiver on two LAN devices.
 -   Linux ↔ Linux.
--   Linux ↔ Windows.
--   Linux ↔ Android.
--   Windows ↔ Android.
--   Discovery success and failure.
--   Manual connection fallback.
+-   Explicit `host:port` connection setup.
 -   TLS handshake and peer identity verification.
 -   Accept, reject, cancel, and disconnect flows.
 -   Disk full and permission denied.
@@ -1058,7 +961,7 @@ runs and report median plus range.
 -   Existing destination filename collision.
 -   IPv4 and IPv6 where supported.
 -   Multiple simultaneous transfers.
--   Device address changes.
+-   Phone-browser HTTP upload.
 
 ### 14.3 Security tests
 
@@ -1069,7 +972,6 @@ runs and report median plus range.
 -   Path traversal filenames.
 -   Replayed or duplicate state-changing messages.
 -   Unpaired sender attempting upload.
--   Spoofed discovery advertisement.
 -   Expired or revoked trusted identity.
 -   Excessive incoming connection attempts.
 -   Symlink and destination race cases.
@@ -1077,16 +979,14 @@ runs and report median plus range.
 
 ### 14.4 UI tests
 
--   Device list states.
+-   Peer connection states.
 -   File selection.
 -   Incoming offer prompt.
 -   Accept/reject.
 -   Progress update.
 -   Cancel confirmation if needed.
 -   Error presentation.
--   Keyboard navigation on desktop.
--   Android permission-denied path.
--   Background notification behavior where supported.
+-   Keyboard navigation in the browser page.
 
 ### 14.5 Performance tests
 
@@ -1097,18 +997,19 @@ process measures actual throughput.
 
 ## 15. Error handling
 
-Errors should be classified into: - Discovery. - Connection. -
+Errors should be classified into: - Connection. -
 Authentication/pairing. - User rejection. - File access. - Disk
 capacity. - Network interruption. - Integrity verification. - Protocol
 compatibility. - Internal failure.
 
-Examples of user-facing guidance: - "No devices found. Make sure both
-devices are on the same local network and local-network access is
-allowed." - "The receiver rejected this transfer." - "The connection was
-interrupted. The file was not marked as complete." - "There is not
-enough free space at the selected destination." - "The received file
-failed integrity verification and was not finalized." - "This device
-uses an incompatible protocol version. Update both applications."
+Examples of user-facing guidance: - "Could not reach the peer. Check the
+host and port, that both devices are on the same local network, and that
+local-network access is allowed." - "The receiver rejected this
+transfer." - "The connection was interrupted. The file was not marked as
+complete." - "There is not enough free space at the selected
+destination." - "The received file failed integrity verification and was
+not finalized." - "This device uses an incompatible protocol version.
+Update both applications."
 
 Do not show a raw stack trace as the normal UI error. Keep detailed
 diagnostics in opt-in local logs with secrets and sensitive paths
@@ -1118,22 +1019,18 @@ redacted.
 
 ### 16.1 Development environments
 
--   Linux: native development and primary early prototype.
--   Windows: native build/test runner and integration testing.
--   Android: physical-device testing required for networking, storage,
-    battery, and background behavior.
--   macOS/iOS: later stage, with native signing and platform-specific
+-   Linux: native development and the primary supported platform.
+-   Windows: a later build/test target once the core is stable.
+-   macOS: a later stage, with native signing and platform-specific
     review.
 
 ### 16.2 CI pipeline
 
 For each pull request: 1. Format Rust code. 2. Run Rust linting with
-warnings treated seriously. 3. Run unit tests. 4. Run Flutter formatting
-and analysis. 5. Run protocol fixture tests. 6. Run dependency audit
-tooling. 7. Build supported desktop targets where runners permit. 8.
-Build Android debug artifacts where the CI setup supports it. 9. Publish
-test logs and build artifacts. 10. Keep performance benchmarks separate
-from ordinary correctness tests.
+warnings treated seriously. 3. Run unit tests. 4. Run protocol fixture
+tests. 5. Run dependency audit tooling. 6. Build supported targets where
+runners permit. 7. Publish test logs and build artifacts. 8. Keep
+performance benchmarks separate from ordinary correctness tests.
 
 ### 16.3 Release checklist
 
@@ -1156,10 +1053,9 @@ criteria below pass.
 
 ### Functional
 
--   [ ] Linux, Windows, and Android can send and receive files while the
-    app is active.
--   [ ] Peers discover each other on a typical LAN.
--   [ ] Manual IP/port connection works if discovery fails.
+-   [ ] Linux peers can send and receive files while the app is
+    running.
+-   [ ] A peer can be reached by explicit `host:port`.
 -   [ ] Incoming offers show sender and file metadata.
 -   [ ] Receiver can accept or reject.
 -   [ ] Progress and cancellation work.
@@ -1167,6 +1063,7 @@ criteria below pass.
 -   [ ] Completed files are verified.
 -   [ ] Existing files are not silently overwritten.
 -   [ ] Failed transfers are not marked complete.
+-   [ ] A phone browser can upload files over the LAN.
 
 ### Security
 
@@ -1188,29 +1085,27 @@ criteria below pass.
 
 ### Usability
 
--   [ ] Normal LAN transfer requires no IP entry.
+-   [ ] The browser UI is usable without installing a native app.
 -   [ ] Connection failures explain likely next steps.
 -   [ ] The active transfer state is obvious.
--   [ ] Receiver behavior and visibility settings are understandable.
+-   [ ] Receiver behavior settings are understandable.
 -   [ ] Local transfers work without an account or cloud service.
 
 ## 18. Milestone plan
 
 The durations below are rough planning estimates for one developer and
-depend strongly on prior Rust, Flutter, networking, and native-platform
-experience.
+depend strongly on prior Rust and networking experience.
 
 ### Milestone 0: Toolchain and architecture spike
 
--   Install Rust and Flutter.
--   Create workspace and Flutter app.
--   Verify Rust/Flutter bridge on Linux.
--   Confirm Android native library build strategy.
--   Write a one-page architecture decision record for bridge and TLS
-    approach.
+-   Install the Rust toolchain.
+-   Create the workspace.
+-   Confirm the TLS and pairing approach.
+-   Write a one-page architecture decision record for the TLS and
+    pairing design.
 
-**Exit:** a minimal Flutter app can call a Rust function on Linux;
-Android build approach is known.
+**Exit:** a minimal workspace builds and the security approach is
+recorded.
 
 ### Milestone 1: CLI transfer prototype
 
@@ -1233,28 +1128,17 @@ Android build approach is known.
 
 **Exit:** a transfer is encrypted, approved, and safely finalized.
 
-### Milestone 3: Discovery and desktop UX
+### Milestone 3: Browser web UI
 
--   Add mDNS/DNS-SD.
--   Add manual connection fallback.
--   Implement device list and transfer UI.
--   Package Linux and Windows builds.
--   Test firewall and multicast failure modes.
+-   Serve the embedded HTML/JS page from the app.
+-   Implement peer connect by `host:port`.
+-   Implement the send/receive interface and the phone-upload path.
+-   Package the Linux build.
 
-**Exit:** a user can discover and transfer between desktop peers without
-terminal use.
+**Exit:** a user can transfer between peers from a browser without
+typing commands by hand.
 
-### Milestone 4: Android client
-
--   Integrate Rust core.
--   Add file picker and Android storage APIs.
--   Implement active-app receive/send.
--   Add notifications and share-sheet integration where feasible.
--   Test on real Android devices and different Wi-Fi networks.
-
-**Exit:** phone ↔ desktop transfer works reliably in foreground.
-
-### Milestone 5: Reliability and performance
+### Milestone 4: Reliability and performance
 
 -   Add transfer queue.
 -   Improve errors and logging.
@@ -1264,13 +1148,12 @@ terminal use.
 
 **Exit:** repeatable performance and failure recovery are documented.
 
-### Milestone 6: Post-MVP integrations
+### Milestone 5: Post-MVP integrations
 
--   Background transfer improvements.
 -   Folder transfers.
 -   Clipboard and URL sharing.
 -   USB networking proof of concept.
--   macOS/iOS planning.
+-   macOS/Windows planning.
 -   Optional remote-transfer architecture only if the product needs it.
 
 ## 19. Risks and mitigations
@@ -1278,19 +1161,6 @@ terminal use.
   -----------------------------------------------------------------------
   Risk                    Impact                  Mitigation
   ----------------------- ----------------------- -----------------------
-  Flutter/Rust bridge     Slower cross-platform   Build a bridge proof of
-  complexity              development             concept before
-                                                  implementing the full
-                                                  core
-
-  mDNS blocked by network Peers cannot            Manual address and QR
-                          auto-discover           fallback
-
-  Android background      Interrupted transfers   Start with foreground
-  restrictions                                    reliability; add
-                                                  supported background
-                                                  execution
-
   Platform storage        Files fail to save      Isolate storage behind
   differences             consistently            platform adapters
 
@@ -1312,7 +1182,7 @@ terminal use.
                                                   parallelism out of P0
 
   Firewall rules          Connection fails        Clear diagnostics and
-                          despite discovery       documented firewall
+                          despite a correct       documented firewall
                                                   behavior
 
   Unsafe file paths       Files written outside   Strict path validation
@@ -1322,14 +1192,12 @@ terminal use.
 
 ## 20. Decisions to record before implementation
 
-Create short Architecture Decision Records (ADRs) for: 1. Flutter/Rust
-bridge choice. 2. TLS library and device identity model. 3. Exact
-pairing and authentication-string construction. 4. HTTP streaming versus
-a custom binary stream. 5. mDNS implementation and platform-specific
-permissions. 6. Settings and secure key storage. 7. Transfer history
-schema. 8. License and dependency policy. 9. Packaging and update
-strategy. 10. Whether automatic acceptance will be supported and its
-exact restrictions.
+Create short Architecture Decision Records (ADRs) for: 1. TLS library
+and device identity model. 2. Exact pairing and authentication-string
+construction. 3. HTTP streaming versus a custom binary stream. 4.
+Settings and secure key storage. 5. Transfer history schema. 6. License
+and dependency policy. 7. Packaging and update strategy. 8. Whether
+automatic acceptance will be supported and its exact restrictions.
 
 Do not leave the pairing/security design as an informal TODO while
 exposing a network listener. The first prototype may use a restricted
@@ -1352,9 +1220,9 @@ The best first slice is deliberately small:
 9.  A benchmark records throughput, CPU use, and peak memory.
 
 Then add TLS and authenticated pairing before exposing the service for
-general use. Next add discovery, then the Flutter UI, then Android
-integration. This sequence validates the difficult technical risks early
-and minimizes the chance of building a polished interface around an
+general use. Next add the browser web UI, then the phone-upload path.
+This sequence validates the difficult technical risks early and
+minimizes the chance of building a polished interface around an
 unreliable transfer engine.
 
 ## 22. Definition of done for each feature
@@ -1373,10 +1241,10 @@ Performance claims, if any, are supported by reproducible measurements.
 Build SwiftDrop as a **secure, local-first transfer engine first, and a
 polished sharing experience second**.
 
-Use Flutter for the shared interface, Rust for protocol and streaming,
-TCP/TLS for the initial transport, mDNS/DNS-SD for discovery, and
-SHA-256 for file integrity. Keep direct USB as a future adapter,
-beginning with USB networking where supported.
+Use Rust for protocol, streaming, and the core, TCP/TLS for the initial
+transport, a self-hosted browser page for the interface, and SHA-256 for
+file integrity. Peers connect by explicit `host:port`. Keep direct USB
+as a future adapter, beginning with USB networking where supported.
 
 Do not start with cloud infrastructure, custom cryptography, a custom
 congestion-control algorithm, or every platform-specific integration at

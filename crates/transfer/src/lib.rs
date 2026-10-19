@@ -11,20 +11,16 @@
 //!   chunk writes → SHA-256 → fsync → atomic rename (spec FR-XFER-009/012).
 //! * [`file_source`] — the sending-side pipeline: size-capped chunked
 //!   reads and whole-file pre-hashing (ADR-0007).
-//! * [`progress`] — smoothed speed/ETA display helpers (spec NFR-PERF-007).
-//! * [`limits`] — disk-space checks (spec FR-XFER-020).
 //!
 //! It knows nothing about sockets or UIs: `swiftdrop-core` drives these
-//! pieces over an authenticated connection, and the CLI renders them.
+//! pieces over an authenticated connection, and the CLI/web UI renders them.
 //!
 //! Re-exported for convenience: [`CancellationToken`] — the one flag that
 //! propagates a user's Cancel to every task involved in a transfer.
 
 pub mod file_sink;
 pub mod file_source;
-pub mod limits;
 pub mod paths;
-pub mod progress;
 pub mod state;
 
 pub use file_sink::{FinalizedFile, IncomingFile, ReceiveError};

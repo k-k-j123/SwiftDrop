@@ -6,8 +6,13 @@
 //! such variable implemented today; a `SWIFTDROP_DEST_DIR` alias for
 //! `--dest` is spec'd in intent but not yet read anywhere).
 //!
-//! Nothing network-related or file-list-related is exposed to discovery
-//! (see `swiftdrop-discovery` docs).
+//! Nothing network- or file-list-related is sent to peers: discovery was
+//! removed, and peers are always addressed manually as `host:port`.
+
+/// Default TCP port for a `receive` session listener when the user does
+/// not specify one. Fixed (not ephemeral) so a sender can type just
+/// `host` and still reach the default listener on the other side.
+pub const DEFAULT_LISTEN_PORT: u16 = 52915;
 
 /// Default destination directory for received files (runtime-resolved):
 /// platform Downloads if available, else the user's home dir.
