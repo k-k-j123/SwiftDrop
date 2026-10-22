@@ -12,16 +12,23 @@
 //! * `web` — the app itself: a hand-rolled HTTP server whose single page
 //!   is the whole UI (send, receive, and phone upload). Deliberately
 //!   unauthenticated (see its module docs for the trade).
+//! * `progress` — the live byte counters `sessions` writes and the UI
+//!   polls, so a transfer draws a real bar and speed (spec FR-UI-004,
+//!   §9.3). Lock-free and local: nothing new goes on the wire.
 //!
 //! The non-technical owner's requirement ("document everything properly")
 //! is honored: every public type has rationale, every invariant is
 //! explained, and we never log secrets (spec NFR-SEC-007).
 
 pub mod config;
+pub mod progress;
 pub mod sessions;
 pub mod settings;
 pub mod web;
 
+// The live-counter type callers put into `SendOptions`/`ReceiveOptions` and
+// read while the transfer runs (spec §9.3).
+pub use progress::TransferProgress;
 pub use sessions::{
     receive, send, AutoAccept, OfferLimits, Peer, ReceiveOptions, SendOptions, SendOutcome,
     SessionError, SessionPrompt,

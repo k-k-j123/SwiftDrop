@@ -40,7 +40,9 @@
 //!   phase the sender writes without reading, so a receiver pushing
 //!   progress frames would eventually block on a full socket buffer while
 //!   the sender blocks on a full *send* buffer — a shared-socket
-//!   deadlock. The CLI sender shows local write progress instead.
+//!   deadlock. Progress is counted **locally, one counter per side**,
+//!   supplied by the caller through the options ([`TransferProgress`]) and
+//!   polled by whoever displays it — the web UI's bar (spec §9.3).
 //!   Upgrade: a second status connection, or have the sender read while
 //!   it writes.
 //! * **One connection is served at a time** (spec §8.2 permits this for
@@ -54,6 +56,7 @@ use async_trait::async_trait;
 use base64::Engine as _;
 use std::future::Future;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 use swiftdrop_protocol::errors::{ErrorCode, ProtocolError};
 use swiftdrop_protocol::framing::{read_message, write_frame, write_message};
@@ -77,6 +80,8 @@ use tokio_rustls::{TlsAcceptor, TlsConnector};
 // Re-exported so callers building [`ReceiveOptions`]/[`SendOptions`]
 // don't need a direct dependency on the protocol crate.
 pub use swiftdrop_protocol::validate::OfferLimits;
+
+use crate::progress::{Direction, TransferProgress};
 
 /// Base64 engine for the opaque key/signature fields in a `hello`.
 /// `STANDARD` (with padding) matches what `docs/protocol.md` documents.
@@ -209,6 +214,10 @@ pub struct SendOptions {
     pub limits: OfferLimits,
     /// Skip prompts (CLI `--yes` / tests). Never the default (spec §20).
     pub auto_accept: bool,
+    /// Where this send reports live byte counts (spec §9.3). Shared with the
+    /// caller so it can display them while the send is still running; a
+    /// caller that shows nothing passes a fresh one.
+    pub progress: Arc<TransferProgress>,
 }
 
 /// Everything [`receive`] needs besides the listening socket.
@@ -225,6 +234,10 @@ pub struct ReceiveOptions {
     pub limits: OfferLimits,
     /// Skip prompts (CLI `--yes` / tests). Never the default (spec §20).
     pub auto_accept: bool,
+    /// Where each received transfer reports live byte counts (spec §9.3).
+    /// One counter serves every session this listener accepts; each session
+    /// resets it and the last one's result stays until the next arrives.
+    pub progress: Arc<TransferProgress>,
 }
 
 /// What one completed **outbound** transfer produced.
@@ -312,9 +325,15 @@ pub async fn receive<P: SessionPrompt>(
             Role::Receive {
                 dest_dir: opts.dest_dir.clone(),
                 collision_policy: opts.collision_policy,
+                progress: Arc::clone(&opts.progress),
             },
         )
         .await;
+        // Every exit path lands here, so the counter can never be left
+        // claiming a transfer is still running (spec FR-UI-004). Sessions
+        // that never transferred anything leave it untouched — see
+        // `TransferProgress::finish`.
+        opts.progress.finish(outcome.is_ok());
 
         match outcome {
             Ok(_) => tracing::info!(%peer_addr, "session finished"),
@@ -377,7 +396,7 @@ pub async fn send<P: SessionPrompt>(
         other => other,
     })?;
 
-    match run_session(
+    let result = run_session(
         &mut stream,
         |s: &tokio_rustls::client::TlsStream<TcpStream>| tls::client_exporter(s),
         &identity,
@@ -386,10 +405,19 @@ pub async fn send<P: SessionPrompt>(
         &prompt,
         opts.auto_accept,
         opts.limits,
-        Role::Send { files: prepared },
+        Role::Send {
+            files: prepared,
+            progress: Arc::clone(&opts.progress),
+        },
     )
-    .await
-    {
+    .await;
+    // Every exit path lands here, so a failed send never leaves the bar
+    // spinning (spec FR-UI-004). A failure before the bulk phase (bad
+    // address, declined pairing) leaves an untouched counter alone — see
+    // `TransferProgress::finish`.
+    opts.progress.finish(result.is_ok());
+
+    match result {
         // The send role's branch always produces an outcome; this is an
         // internal invariant, not a runtime condition.
         Ok(Some(outcome)) => Ok(outcome),
@@ -408,10 +436,12 @@ pub async fn send<P: SessionPrompt>(
 enum Role {
     Send {
         files: Vec<PreparedFile>,
+        progress: Arc<TransferProgress>,
     },
     Receive {
         dest_dir: PathBuf,
         collision_policy: CollisionPolicy,
+        progress: Arc<TransferProgress>,
     },
 }
 
@@ -477,10 +507,13 @@ where
 
     // ── offer / transfer ────────────────────────────────────────────────
     let result = match role {
-        Role::Send { files } => send_transfer(stream, &mut tracker, files).await,
+        Role::Send { files, progress } => {
+            send_transfer(stream, &mut tracker, files, &progress).await
+        }
         Role::Receive {
             dest_dir,
             collision_policy,
+            progress,
         } => {
             receive_transfer(
                 stream,
@@ -491,6 +524,7 @@ where
                 collision_policy,
                 prompt,
                 auto_accept,
+                &progress,
             )
             .await
         }
@@ -627,6 +661,7 @@ async fn send_transfer<S>(
     stream: &mut S,
     tracker: &mut TransferStateTracker,
     mut files: Vec<PreparedFile>,
+    progress: &TransferProgress,
 ) -> Result<Option<SendOutcome>, SessionError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -678,6 +713,10 @@ where
     tracker.transition(TransferState::Transferring)?;
 
     // ── bulk phase: write everything, read nothing (see module docs) ────
+    // The clock and the byte count start here, not at the offer: "bytes
+    // written to the socket" is what this side can honestly report, and
+    // waiting for approval is not transfer time (spec §9.3).
+    progress.begin(Direction::Send, total);
     let mut buf = vec![0u8; MAX_DATA_FRAME_BYTES];
     for (item, file) in offer.items.iter().zip(files.iter_mut()) {
         write_message(
@@ -695,6 +734,9 @@ where
                 break;
             }
             write_frame(stream, FRAME_KIND_DATA, &buf[..n]).await?;
+            // Counted after the write completes, so the number is bytes the
+            // socket accepted, never bytes we merely read from the disk.
+            progress.add(n as u64);
         }
         tracing::debug!(name = %item.name, "item streamed");
     }
@@ -767,6 +809,7 @@ async fn receive_transfer<S>(
     collision_policy: CollisionPolicy,
     prompt: &dyn SessionPrompt,
     auto_accept: bool,
+    progress: &TransferProgress,
 ) -> Result<Option<SendOutcome>, SessionError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -819,8 +862,21 @@ where
     // ── bulk phase: temp files under construction ───────────────────────
     // Any failure mid-stream deletes every temp file: a partial receive
     // is never left looking like a finished one (spec NFR-REL-002).
+    // The counter starts after approval for the same reason as the sender's
+    // (spec §9.3), and it counts bytes written to temp storage — never
+    // bytes "received", which only the digest check can upgrade to saved.
+    progress.begin(Direction::Receive, offer.total_size_bytes);
     let mut sinks: Vec<IncomingFile> = Vec::with_capacity(offer.items.len());
-    if let Err(e) = receive_items(stream, &offer, dest_dir, collision_policy, &mut sinks).await {
+    if let Err(e) = receive_items(
+        stream,
+        &offer,
+        dest_dir,
+        collision_policy,
+        &mut sinks,
+        progress,
+    )
+    .await
+    {
         for sink in sinks {
             sink.abort();
         }
@@ -889,6 +945,7 @@ async fn receive_items<S>(
     dest_dir: PathBuf,
     collision_policy: CollisionPolicy,
     sinks: &mut Vec<IncomingFile>,
+    progress: &TransferProgress,
 ) -> Result<(), SessionError>
 where
     S: AsyncRead + AsyncWrite + Unpin,
@@ -930,6 +987,10 @@ where
                 (_, Some(bytes)) => {
                     sink.write_chunk(&bytes)?;
                     got += bytes.len() as u64;
+                    // After the write, not before: the number means "bytes
+                    // in temp storage", which is what this side can prove
+                    // (spec §9.3).
+                    progress.add(bytes.len() as u64);
                 }
                 (Some(Message::Cancel(_)), None) => {
                     return Err(SessionError::PeerRejected(ErrorCode::TransferCancelled));

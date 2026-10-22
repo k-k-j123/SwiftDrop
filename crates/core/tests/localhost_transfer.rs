@@ -28,6 +28,8 @@
 //! `shortcut:` note in `receive_transfer`.
 
 use std::path::PathBuf;
+use std::sync::Arc;
+use swiftdrop_core::progress::{State, TransferProgress};
 use swiftdrop_core::{
     receive, send, AutoAccept, CollisionPolicy, OfferLimits, ReceiveOptions, SendOptions,
     SessionPrompt,
@@ -69,12 +71,15 @@ impl PeerDirs {
         }
     }
 
+    /// Counters nobody reads; tests that assert on progress override the
+    /// field with their own handle (spec §9.3).
     fn send_opts(&self) -> SendOptions {
         SendOptions {
             config_dir: self.sender_cfg.path().to_path_buf(),
             device_name: "sender-test".into(),
             limits: OfferLimits::default(),
             auto_accept: true,
+            progress: Arc::new(TransferProgress::new()),
         }
     }
 
@@ -86,6 +91,7 @@ impl PeerDirs {
             collision_policy: CollisionPolicy::Rename,
             limits: OfferLimits::default(),
             auto_accept: true,
+            progress: Arc::new(TransferProgress::new()),
         }
     }
 }
@@ -232,6 +238,60 @@ async fn localhost_rejected_offer_writes_nothing() {
         .expect("read dest dir")
         .collect();
     assert!(landed.is_empty(), "rejected offer must write no files");
+
+    receiver.abort();
+}
+
+/// The counters behind the web UI's bar must actually move and end up
+/// honest: the sender counts bytes it handed to the socket, the receiver
+/// counts bytes it wrote to temp storage, and both match the offer's total
+/// (spec FR-UI-004, §9.3). The rejected-offer test above covers the other
+/// half — a declined prompt must leave a counter that never started alone.
+#[tokio::test]
+async fn localhost_progress_counts_both_sides() {
+    let dirs = PeerDirs::new();
+    // 512 KiB crosses eight 64 KiB data frames, so the counter is genuinely
+    // accumulated rather than set to the total in one step.
+    let payload: Vec<u8> = (0..512 * 1024u32).map(|i| (i % 251) as u8).collect();
+    let path = write_file(&dirs.src, "counted.bin", &payload);
+    let size = payload.len() as u64;
+
+    let (listener, addr) = bind_localhost().await;
+    let send_progress = Arc::new(TransferProgress::new());
+    let recv_progress = Arc::new(TransferProgress::new());
+
+    let recv_opts = ReceiveOptions {
+        progress: Arc::clone(&recv_progress),
+        ..dirs.recv_opts()
+    };
+    let receiver = tokio::spawn(async move { receive(listener, recv_opts, AutoAccept).await });
+
+    let send_opts = SendOptions {
+        progress: Arc::clone(&send_progress),
+        ..dirs.send_opts()
+    };
+    send(addr, "127.0.0.1", vec![path], send_opts, AutoAccept)
+        .await
+        .expect("send should succeed");
+
+    // `send` only returns once the receiver answered, so the sender's
+    // counter is final: everything was written and nothing failed.
+    let sent = send_progress.snapshot();
+    assert_eq!(sent.total, size, "total comes from the offer");
+    assert_eq!(sent.bytes, size, "a completed send counts every byte");
+    assert_eq!(sent.state, State::Sent);
+
+    // The receiver counted the same bytes on their way to temp storage.
+    // Its terminal state is not asserted: the session task marks
+    // `received` just after it answers, which can trail `send`'s return.
+    let received = recv_progress.snapshot();
+    assert_eq!(received.total, size);
+    assert_eq!(received.bytes, size, "a verified receive counts every byte");
+    assert!(
+        matches!(received.state, State::Receiving | State::Received),
+        "receive counter should be live or done, got {:?}",
+        received.state
+    );
 
     receiver.abort();
 }

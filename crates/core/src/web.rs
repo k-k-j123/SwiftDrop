@@ -51,9 +51,16 @@
 //!   The copies are deleted when the send attempt ends (success or
 //!   failure); a crash before that leaves them, and startup clears the
 //!   directory.
-//! * **No live P2P byte counter.** `sessions` emits no progress events, so
-//!   the page shows transfer *results*, not a moving bar. Uploads (which
-//!   the browser can measure) do show progress and speed.
+//! * **The transfer rate is computed in the page, not on the server.** The
+//!   server reports bytes/total/state/elapsed (spec §9.3's counters); the
+//!   page samples them on its poll and derives a rolling rate and an ETA.
+//!   So the rate a tab shows is only as good as its poll interval, and a
+//!   tab opened mid-transfer shows the transfer's *average* rate until it
+//!   has two samples of its own.
+//! * **One transfer is displayed at a time.** A second send replaces the
+//!   first's counter in the status payload (each transfer keeps its own, so
+//!   the numbers never mix, but only the newest is shown). Upgrade: a list
+//!   of transfers keyed by id.
 //! * **No size cap on uploads beyond the disk-space check** in
 //!   `IncomingFile::create`; the name sanitizer (`paths.rs`) is what keeps
 //!   a hostile filename inside the destination.
@@ -70,6 +77,7 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 
+use crate::progress::{Snapshot, State, TransferProgress};
 use crate::sessions::{receive, send, Peer, ReceiveOptions, SendOptions, SessionPrompt};
 use crate::OfferLimits;
 
@@ -200,6 +208,10 @@ struct Inner {
     pending: HashMap<u64, Pending>,
     /// The running receive loop, if any.
     receive: Option<ReceiveHandle>,
+    /// Live counter of the most recent send (spec §9.3). A newer send
+    /// replaces the handle; the older task keeps writing to its own counter,
+    /// so two sends can never pollute each other's numbers.
+    send_progress: Option<Arc<TransferProgress>>,
     /// Recent activity, newest first (capped at [`MAX_EVENTS`]).
     events: VecDeque<String>,
 }
@@ -207,6 +219,10 @@ struct Inner {
 struct ReceiveHandle {
     /// Bound address, shown on the page (`0.0.0.0:52915`).
     addr: String,
+    /// Live counter for whatever transfer this loop is serving (spec §9.3).
+    /// One counter for the loop: each session resets it, and the last
+    /// result stays visible until the next transfer arrives.
+    progress: Arc<TransferProgress>,
     task: tokio::task::JoinHandle<()>,
 }
 
@@ -332,9 +348,41 @@ impl AppState {
         serde_json::json!({
             "receive": inner.receive.as_ref().map(|r| r.addr.clone()),
             "prompts": prompts,
+            // The live transfer bar (spec FR-UI-004). Counters live outside
+            // this lock: they are atomics the session task updates directly.
+            "transfer": transfer_json(
+                inner.send_progress.as_deref().map(TransferProgress::snapshot),
+                inner.receive.as_ref().map(|r| r.progress.snapshot()),
+            ),
             "events": inner.events.iter().collect::<Vec<_>>(),
         })
         .to_string()
+    }
+}
+
+/// Pick the one transfer the page should draw, as JSON, or `null` when
+/// nothing has run since the server started (an untouched counter must not
+/// paint an empty bar at 0%).
+///
+/// A running transfer always wins. Between two finished ones the send wins:
+/// the user is waiting on that button, while a receive listener can sit
+/// idle for hours after its last file.
+fn transfer_json(send: Option<Snapshot>, receive: Option<Snapshot>) -> serde_json::Value {
+    let chosen = match (send, receive) {
+        (Some(s), _) if s.state.is_active() => Some(s),
+        (_, Some(r)) if r.state.is_active() => Some(r),
+        (Some(s), _) if s.state != State::Idle => Some(s),
+        (_, Some(r)) if r.state != State::Idle => Some(r),
+        _ => None,
+    };
+    match chosen {
+        Some(t) => serde_json::json!({
+            "state": t.state.as_str(),
+            "bytes": t.bytes,
+            "total": t.total,
+            "elapsed_ms": t.elapsed_ms,
+        }),
+        None => serde_json::Value::Null,
     }
 }
 
@@ -528,6 +576,12 @@ async fn api_send(tcp: &mut TcpStream, state: &Arc<AppState>, target: &str) -> s
     let count = files.len();
     let state = state.clone();
     let host_for_task = host.clone();
+    // Publish the counter *before* spawning, so a page that polls right
+    // after this POST already finds the transfer it just started (spec
+    // FR-UI-004). The task below owns the other handle; the page reads this
+    // one through /api/status.
+    let progress = Arc::new(TransferProgress::new());
+    state.lock().send_progress = Some(Arc::clone(&progress));
     tokio::spawn(async move {
         let opts = SendOptions {
             config_dir: state.config_dir.clone(),
@@ -536,6 +590,7 @@ async fn api_send(tcp: &mut TcpStream, state: &Arc<AppState>, target: &str) -> s
             // Never auto-accept: the whole point of the UI is that the user
             // answers (spec §20).
             auto_accept: false,
+            progress,
         };
         let prompt = WebPrompt {
             state: state.clone(),
@@ -585,6 +640,9 @@ async fn api_receive_start(
         .map(|a| a.to_string())
         .unwrap_or_else(|_| format!("0.0.0.0:{port}"));
 
+    // One counter for the loop: every session resets it, and the handle
+    // below keeps it readable from /api/status (spec FR-UI-004).
+    let progress = Arc::new(TransferProgress::new());
     let opts = ReceiveOptions {
         config_dir: state.config_dir.clone(),
         device_name: state.device_name.clone(),
@@ -592,6 +650,7 @@ async fn api_receive_start(
         collision_policy: state.collision_policy,
         limits: OfferLimits::default(),
         auto_accept: false,
+        progress: Arc::clone(&progress),
     };
     let prompt = WebPrompt {
         state: Arc::clone(state),
@@ -604,6 +663,7 @@ async fn api_receive_start(
     });
     state.lock().receive = Some(ReceiveHandle {
         addr: local.clone(),
+        progress,
         task,
     });
     state.event(format!("receiving on {local}"));
@@ -862,7 +922,8 @@ fn bytes_text(b: u64) -> String {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /// The single-page app: three sections (send, receive, phone upload), a
-/// prompt area for live pairing/offer questions, and an activity log.
+/// live transfer bar, a prompt area for live pairing/offer questions, and
+/// an activity log.
 ///
 /// Embedded so `serve` needs no asset files or build step. All dynamic
 /// values (peer names, filenames, errors) are written with `textContent`,
@@ -940,6 +1001,11 @@ destination folder the server printed.</div>
   <input id="pick" type="file" multiple hidden>
   <div id="list"></div>
 </section>
+
+<div id="xfer" class="file" hidden>
+  <div class="row"><span class="name" id="xfname"></span><span class="meta" id="xfmeta"></span></div>
+  <div class="bar"><i id="xfill"></i></div>
+</div>
 
 <div id="prompts"></div>
 <div id="log"></div>
@@ -1060,15 +1126,62 @@ function showPrompts(ps) {
 let local = [];
 function appendLog(msg) { local.unshift(msg); if (local.length > 10) local.pop(); }
 
+// Live transfer bar for the P2P send/receive (spec FR-UI-004, §9.3). The
+// server reports bytes, total, state and elapsed; the *rate* is derived
+// here from successive polls, so a tab opened mid-transfer shows the
+// transfer's average rate until it has two samples of its own.
+const XFNAME = { sending:'Sending', receiving:'Receiving', sent:'Sent',
+                 received:'Received', failed:'Failed' };
+let xfer = null, xspeed = null, active = false;
+
+function showTransfer(t) {
+  const box = $('xfer');
+  if (!t) { box.hidden = true; xfer = null; xspeed = null; active = false; return; }
+  box.hidden = false;
+  const done = t.state === 'sent' || t.state === 'received';
+  const failed = t.state === 'failed';
+  active = !done && !failed;
+
+  // Rolling rate: an exponential average of the gaps between polls, so the
+  // number follows the current speed instead of the whole transfer's mean.
+  const now = performance.now();
+  if (xfer && t.bytes >= xfer.bytes && now > xfer.t) {
+    const inst = (t.bytes - xfer.bytes) / ((now - xfer.t) / 1000);
+    xspeed = xspeed == null ? inst : xspeed * .6 + inst * .4;
+  } else if (!xfer || t.bytes < xfer.bytes) {
+    xspeed = null;                    // bytes went backwards: a new transfer
+  }
+  xfer = { bytes: t.bytes, t: now };
+  // Once bytes stop moving, average the whole transfer instead of decaying
+  // to zero on every poll.
+  if (done && t.elapsed_ms > 0) xspeed = t.bytes / (t.elapsed_ms / 1000);
+
+  const pct = t.total ? Math.min(100, Math.floor(t.bytes / t.total * 100)) : 0;
+  let tail = xspeed != null ? '  ' + rate(xspeed) : '';
+  if (active && xspeed > 0 && t.total > t.bytes) {
+    const secs = Math.ceil((t.total - t.bytes) / xspeed);
+    tail += '  ' + (secs < 60 ? secs + 's' : Math.ceil(secs / 60) + 'm') + ' left';
+  }
+  box.className = 'file' + (done ? ' ok' : failed ? ' bad' : '');
+  $('xfname').textContent = XFNAME[t.state] || 'Transfer';
+  $('xfill').style.width = (done ? 100 : pct) + '%';
+  $('xfmeta').textContent = (done ? '' : pct + '%  ')
+                         + fmt(t.bytes) + ' / ' + fmt(t.total) + tail;
+}
+
 async function poll() {
   let s;
   try { s = await (await fetch('/api/status', { cache: 'no-store' })).json(); }
   catch (e) { return; }
   $('recvstate').textContent = s.receive || 'no';
+  showTransfer(s.transfer);
   showPrompts(s.prompts || []);
   log.textContent = (s.events || []).concat(local).join('\n');
 }
 setInterval(poll, 1000);
+// A running transfer is polled faster so its bar actually moves; idle costs
+// one extra interval that does nothing (spec FR-UI-004).
+setInterval(() => { if (active) poll(); }, 300);
 poll();
 </script>
 </body>

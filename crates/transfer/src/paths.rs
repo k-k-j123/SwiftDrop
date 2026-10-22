@@ -33,11 +33,12 @@ use std::path::{Path, PathBuf};
 const MAX_NAME_BYTES: usize = 200;
 
 /// What to do when the target filename already exists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CollisionPolicy {
     /// Append " (1)", " (2)", … before the extension. **Default** —
     /// never loses an existing file.
+    #[default]
     Rename,
     /// Do not save this file; report it as skipped.
     Skip,

@@ -21,8 +21,11 @@
 
 use std::io::Write as _;
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use swiftdrop_core::{
     receive, send, AutoAccept, OfferLimits, Peer, ReceiveOptions, SendOptions, SessionPrompt,
+    TransferProgress,
 };
 use swiftdrop_protocol::messages::TransferOffer;
 
@@ -85,6 +88,10 @@ async fn cmd_receive(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     let listener = tokio::net::TcpListener::bind(&listen).await?;
     eprintln!("listening on {listen}, saving into {}", dest.display());
 
+    let progress = Arc::new(TransferProgress::new());
+    // Spawn live CLI progress reporter in the background.
+    tokio::spawn(show_progress(progress.clone()));
+
     let opts = ReceiveOptions {
         config_dir: swiftdrop_core::config::config_dir(),
         device_name: settings.device_name.clone(),
@@ -92,6 +99,7 @@ async fn cmd_receive(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
         collision_policy: settings.collision_policy,
         limits: OfferLimits::default(),
         auto_accept: auto,
+        progress,
     };
     // `AutoAccept` when `--yes`, otherwise the terminal prompt: `receive`
     // is generic over the prompt, so the choice is static, not a branch
@@ -103,6 +111,7 @@ async fn cmd_receive(args: &[String]) -> Result<(), Box<dyn std::error::Error>> 
     };
     received.map_err(|e| Box::from(e) as Box<dyn std::error::Error>)
 }
+
 /// `swiftdrop send` — push one or more files to a peer in a single offer.
 async fn cmd_send(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     let settings = swiftdrop_core::Settings::load();
@@ -132,11 +141,16 @@ async fn cmd_send(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
         .next()
         .ok_or_else(|| format!("could not resolve {host}:{port}"))?;
 
+    let progress = Arc::new(TransferProgress::new());
+    // Spawn live CLI progress reporter in the background.
+    tokio::spawn(show_progress(progress.clone()));
+
     let opts = SendOptions {
         config_dir: swiftdrop_core::config::config_dir(),
         device_name: settings.device_name.clone(),
         limits: OfferLimits::default(),
         auto_accept: auto,
+        progress,
     };
     let files: Vec<PathBuf> = files.iter().map(PathBuf::from).collect();
     let sent: Result<_, swiftdrop_core::SessionError> = if auto {
@@ -200,6 +214,120 @@ async fn cmd_serve(args: &[String]) -> Result<(), Box<dyn std::error::Error>> {
     swiftdrop_core::web::serve(opts)
         .await
         .map_err(|e| Box::from(e) as Box<dyn std::error::Error>)
+}
+
+/// Format byte counts into human-readable strings (B, KB, MB, GB).
+fn format_bytes(b: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = 1024 * KB;
+    const GB: u64 = 1024 * MB;
+    if b >= GB {
+        format!("{:.2} GB", b as f64 / GB as f64)
+    } else if b >= MB {
+        format!("{:.2} MB", b as f64 / MB as f64)
+    } else if b >= KB {
+        format!("{:.1} KB", b as f64 / KB as f64)
+    } else {
+        format!("{b} B")
+    }
+}
+
+/// Format transfer rate into human-readable speed.
+fn format_rate(bytes_per_sec: f64) -> String {
+    if bytes_per_sec <= 0.0 {
+        return "0 KB/s".to_string();
+    }
+    const KB: f64 = 1024.0;
+    const MB: f64 = 1024.0 * KB;
+    const GB: f64 = 1024.0 * MB;
+    if bytes_per_sec >= GB {
+        format!("{:.2} GB/s", bytes_per_sec / GB)
+    } else if bytes_per_sec >= MB {
+        format!("{:.2} MB/s", bytes_per_sec / MB)
+    } else {
+        format!("{:.1} KB/s", bytes_per_sec / KB)
+    }
+}
+
+/// Background task that polls `TransferProgress` and renders a live CLI
+/// progress bar to stderr with percentage, transferred/total bytes, and speed.
+async fn show_progress(progress: Arc<TransferProgress>) {
+    let mut last_bytes: u64 = 0;
+    let mut last_t = Instant::now();
+    let mut last_rate: f64 = 0.0;
+    let mut was_active = false;
+    let mut ticker = tokio::time::interval(Duration::from_millis(200));
+
+    loop {
+        ticker.tick().await;
+        let snap = progress.snapshot();
+        let active = snap.state.is_active();
+
+        if active {
+            if !was_active {
+                last_bytes = snap.bytes;
+                last_t = Instant::now();
+                last_rate = 0.0;
+            }
+            was_active = true;
+
+            if snap.total > 0 {
+                let now = Instant::now();
+                let dt = (now - last_t).as_secs_f64();
+                if dt > 0.0 && snap.bytes >= last_bytes {
+                    let inst = (snap.bytes - last_bytes) as f64 / dt;
+                    last_rate = if last_rate == 0.0 {
+                        inst
+                    } else {
+                        last_rate * 0.7 + inst * 0.3
+                    };
+                }
+                last_bytes = snap.bytes;
+                last_t = now;
+
+                let pct = (snap.bytes as f64 / snap.total as f64 * 100.0).min(100.0);
+                let rate_str = if last_rate > 0.0 {
+                    format_rate(last_rate)
+                } else {
+                    "...".into()
+                };
+
+                let width = 20;
+                let filled = ((pct / 100.0) * width as f64) as usize;
+                let filled = filled.min(width);
+                let empty = width - filled;
+                let bar = format!("[{}{}]", "=".repeat(filled), " ".repeat(empty));
+
+                eprint!(
+                    "\r{} {:.1}%  {} / {}  {}",
+                    bar,
+                    pct,
+                    format_bytes(snap.bytes),
+                    format_bytes(snap.total),
+                    rate_str
+                );
+                let _ = std::io::stderr().flush();
+            }
+        } else if was_active {
+            was_active = false;
+            if snap.total > 0 {
+                let pct = (snap.bytes as f64 / snap.total as f64 * 100.0).min(100.0);
+                let width = 20;
+                let filled = ((pct / 100.0) * width as f64) as usize;
+                let filled = filled.min(width);
+                let empty = width - filled;
+                let bar = format!("[{}{}]", "=".repeat(filled), " ".repeat(empty));
+                eprint!(
+                    "\r{} {:.1}%  {} / {}          \n",
+                    bar,
+                    pct,
+                    format_bytes(snap.bytes),
+                    format_bytes(snap.total)
+                );
+                let _ = std::io::stderr().flush();
+            }
+        }
+    }
 }
 
 /// Reads approvals from stdin. Prints the SAS both sides must match

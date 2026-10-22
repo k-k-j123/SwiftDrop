@@ -17,7 +17,8 @@ apps/cli  (binary `swiftdrop`)          — `serve` (the app) / `send` / `receiv
     ↓                                    `--yes` and `--open` flags, stdin TerminalPrompt
 crates/core       orchestration facade — sessions.rs: full connection lifecycle (TLS accept/connect,
     ↓             exporter-bound auth, SAS pairing, offer/accept, streaming, integrity, completion);
-                  web.rs: the app UI — HTTP server, embedded page, browser prompt registry
+                  web.rs: the app UI — HTTP server, embedded page, browser prompt registry;
+                  progress.rs: lock-free live byte counters (send/receive) the page polls for its bar
 crates/transfer   state machine, path sanitization, streaming, SHA-256 finalize
 crates/security   TLS, device identity, SAS pairing, trust store
 crates/protocol   wire format only — no networking, no filesystem, no UI
@@ -30,7 +31,7 @@ crates/protocol   wire format only — no networking, no filesystem, no UI
 ## Commands
 
 - Full verification: `cargo fmt --check` → `cargo clippy --all-targets` → `cargo test --workspace` (order per spec §16.2; no CI enforces it).
-- Gate status (2026-10-19): fmt clean; clippy 0 errors, warnings only (all pre-existing); **90 tests green** = 5 core unit + 2 end-to-end localhost + 9 web UI + 19 protocol + 13 security + 42 transfer. Tests are hermetic (tempfile, in-memory, `127.0.0.1:0`) — no services, network access, or fixtures required.
+- Gate status (2026-10-19): fmt clean; clippy 0 errors, warnings only (all pre-existing); **95 tests green** = 9 core unit + 3 end-to-end localhost + 9 web UI + 19 protocol + 13 security + 42 transfer. Tests are hermetic (tempfile, in-memory, `127.0.0.1:0`) — no services, network access, or fixtures required.
 - `./install.sh` installs the release binary (`cargo install --path apps/cli`) plus an app-menu launcher and icon from `packaging/` (the launcher's `Exec` gets the binary's absolute path — desktop sessions don't inherit `~/.cargo/bin`). Then `swiftdrop serve --open` runs the app.
 - Single crate: `cargo test -p swiftdrop-transfer`. Single test: `cargo test -p swiftdrop-transfer state::tests::<name>`. End-to-end P2P: `cargo test -p swiftdrop-core --test localhost_transfer` (two in-process peers over real TLS — the §21 first-slice proof). Web UI: `cargo test -p swiftdrop-core --test web_upload` (raw HTTP over `127.0.0.1:0` — page content, byte-identical 16 MiB upload, unicode names, short-body abort, name containment, status/receive controls, and a full send→receive driven through `/api/send` + `/api/prompt`).
 - MSRV is 1.88 (workspace `rust-version`, required by rcgen); toolchain here is 1.99.

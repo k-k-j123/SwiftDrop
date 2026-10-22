@@ -164,6 +164,10 @@ async fn serves_the_app_page() {
         resp.contains("/api/send") && resp.contains("/api/receive/start"),
         "page must contain the P2P controls"
     );
+    assert!(
+        resp.contains("id=\"xfer\"") && resp.contains("showTransfer"),
+        "page must contain the live transfer bar (spec FR-UI-004)"
+    );
     server.handle.abort();
 }
 
@@ -298,6 +302,10 @@ async fn status_reports_idle_state() {
     assert!(st["receive"].is_null(), "not listening yet: {st}");
     assert_eq!(st["prompts"].as_array().map(Vec::len), Some(0));
     assert_eq!(st["events"].as_array().map(Vec::len), Some(0));
+    assert!(
+        st["transfer"].is_null(),
+        "nothing has run, so the page must draw no bar: {st}"
+    );
 
     server.handle.abort();
 }
@@ -431,6 +439,14 @@ async fn send_and_receive_through_the_web_api() {
 
     let landed = std::fs::read(recv.dest.path().join("hello.bin")).expect("received file");
     assert_eq!(landed, payload, "content must survive the P2P path");
+
+    // The same counters the page draws its bar from: by the time the sender
+    // logs "sent", its own counter is final and counted every byte it
+    // handed to the socket (spec FR-UI-004, §9.3).
+    let st = status(&send).await;
+    assert_eq!(st["transfer"]["state"], "sent", "bar must show done: {st}");
+    assert_eq!(st["transfer"]["total"], payload.len() as u64);
+    assert_eq!(st["transfer"]["bytes"], payload.len() as u64);
 
     // The staged copy exists only to be sent; it must go away afterwards.
     for _ in 0..40 {

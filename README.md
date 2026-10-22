@@ -36,7 +36,7 @@ swiftdrop serve [--listen 0.0.0.0:8080] [--dest DIR] [--open]
 
 ## What the page does
 
-**Send to a computer.** Type the other computer's `host:port` (default port `52915`), pick files, send. The files are staged locally first (a browser cannot hand the server a local path), then sent over the real authenticated SwiftDrop protocol.
+**Send to a computer.** Type the other computer's `host:port` (default port `52915`), pick files, send. The files are staged locally first (a browser cannot hand the server a local path), then sent over the real authenticated SwiftDrop protocol. A bar under the tabs tracks the transfer — percent, bytes, live MB/s and time left — on both machines.
 
 **Receive.** Pick a port and press Start. The other computer sends to *your* address and port. Incoming pairings and offers appear on the page as Accept / Decline prompts.
 
